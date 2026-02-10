@@ -8,10 +8,11 @@ import { SmsService } from './sms.service';
 import { RedisModule } from '@nestjs-modules/ioredis';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
+import { OwnerProfile } from '../users/entities/owner-profile.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, RefreshToken]),
+    TypeOrmModule.forFeature([User, RefreshToken, OwnerProfile]),
     RedisModule.forRootAsync({
       useFactory: (config: ConfigService) => ({
         type: 'single',

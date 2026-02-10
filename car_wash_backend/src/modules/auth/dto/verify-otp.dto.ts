@@ -1,4 +1,5 @@
 import { IsString, Matches, Length } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 export class VerifyOtpDto {
   @IsString()
@@ -7,8 +8,9 @@ export class VerifyOtpDto {
   })
   phone: string;
 
-  @IsString() 
+  @IsString()
   @Length(6, 6, { message: 'OTP must be exactly 6 characters' })
+  @Transform(({ value }) => (value != null ? String(value).trim() : value))
   otp: string;
 }
 

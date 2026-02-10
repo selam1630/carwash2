@@ -1,5 +1,13 @@
-import { Entity, PrimaryGeneratedColumn, Column, OneToMany } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  OneToMany,
+  OneToOne,
+} from 'typeorm';
 import { RefreshToken } from '../../auth/entities/refresh-token.entities';
+import { OwnerProfile } from './owner-profile.entity';
+import { WasherProfile } from './washer-profile.entity';
 
 export enum UserRole {
   OWNER = 'OWNER',
@@ -29,4 +37,9 @@ export class User {
     cascade: true,
   })
   refreshTokens: RefreshToken[];
+  @OneToOne(() => OwnerProfile, (profile) => profile.user)
+  ownerProfile: OwnerProfile;
+
+  @OneToOne(() => WasherProfile, (profile) => profile.user)
+  washerProfile: WasherProfile;
 }

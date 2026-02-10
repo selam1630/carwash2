@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { QueryFailedError } from 'typeorm';
 import { User, UserRole } from '../users/entities/user.entity';
 import { RefreshToken } from './entities/refresh-token.entities';
 import { SendOtpDto } from './dto/send-otp.dto';
@@ -16,6 +17,9 @@ import type { Redis } from 'ioredis';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as CryptoJS from 'crypto-js';
+import { Express } from 'express';
+import { OwnerProfile } from '../users/entities/owner-profile.entity';
+import { RegisterOwnerDto } from './dto/register-owner.dto';
 
 @Injectable()
 export class AuthService {
@@ -31,6 +35,8 @@ export class AuthService {
     private readonly redis: Redis,
     private jwtService: JwtService,
     private config: ConfigService,
+    @InjectRepository(OwnerProfile)
+    private ownerRepo: Repository<OwnerProfile>,
   ) {
     this.redis.on('error', (err) =>
       this.logger.warn('Redis connection error: ' + err.message),
@@ -60,15 +66,28 @@ export class AuthService {
     const key = `otp:${phone}`;
     const storedOtp = await this.redis.get(key);
 
-    if (!storedOtp || storedOtp !== otp) {
+    const otpStr = String(otp).trim();
+    if (!storedOtp || storedOtp !== otpStr) {
       throw new UnauthorizedException('Invalid OTP');
     }
 
     await this.redis.del(key);
 
-    let user = await this.userRepo.findOne({ where: { phone } });
+    let user = await this.userRepo.findOne({
+      where: { phone },
+      relations: ['ownerProfile'],
+    });
     if (!user) {
-      user = this.userRepo.create({ phone, role: UserRole.OWNER });
+      throw new UnauthorizedException(
+        'No registration or account found for this phone',
+      );
+    }
+    // Activate if pending registration (owner must have profile; others just activate)
+    if (!user.isActive) {
+      if (user.role === UserRole.OWNER && !user.ownerProfile) {
+        throw new UnauthorizedException('Please complete registration first');
+      }
+      user.isActive = true;
       await this.userRepo.save(user);
     }
 
@@ -105,19 +124,27 @@ export class AuthService {
     return {
       accessToken,
       refreshToken,
-      user: { id: user.id, phone: user.phone, role: user.role },
+      user: {
+        id: user.id,
+        phone: user.phone,
+        role: user.role,
+        isActive: user.isActive,
+      },
     };
   }
 
   async refresh(refreshToken: string) {
+    if (!refreshToken || typeof refreshToken !== 'string') {
+      throw new BadRequestException('refreshToken is required');
+    }
+    const refreshSecret = String(this.config.get('jwt.refreshSecret'));
     try {
       const payload = this.jwtService.verify(refreshToken, {
-        secret: this.config.get('jwt.refreshSecret'),
+        secret: refreshSecret,
       });
 
-      const hash = CryptoJS.HmacSHA256(
-        refreshToken,
-        this.config.get('jwt.refreshSecret'),
+      const hash = (
+        CryptoJS.HmacSHA256(refreshToken, refreshSecret) as CryptoJS.lib.WordArray
       ).toString();
       const stored = await this.refreshRepo.findOne({
         where: { tokenHash: hash, isRevoked: false, user: { id: payload.sub } },
@@ -138,9 +165,8 @@ export class AuthService {
         { expiresIn: '30d' },
       );
 
-      const newHash = CryptoJS.HmacSHA256(
-        newRefresh,
-        this.config.get('jwt.refreshSecret'),
+      const newHash = (
+        CryptoJS.HmacSHA256(newRefresh, refreshSecret) as CryptoJS.lib.WordArray
       ).toString();
 
       // Revoke old
@@ -156,8 +182,73 @@ export class AuthService {
       });
 
       return { accessToken: newAccess, refreshToken: newRefresh };
-    } catch {
+    } catch (err) {
+      if (err instanceof UnauthorizedException) {
+        throw err;
+      }
       throw new UnauthorizedException('Invalid refresh token');
     }
+  }
+  async registerOwner(
+    dto: RegisterOwnerDto,
+    files: {
+      carFront?: Express.Multer.File[];
+      carBack?: Express.Multer.File[];
+      driverLicense?: Express.Multer.File[];
+    },
+  ) {
+    const { phone, fullName, carType, plateNumber, secondaryPhone } = dto;
+    const clean = (str: string) => str?.replace(/^"|"$/g, '').trim();
+
+    const existing = await this.userRepo.findOne({ where: { phone } });
+    if (existing) {
+      throw new BadRequestException('Phone already registered');
+    }
+
+    const cleanPlate = clean(plateNumber);
+    const existingPlate = await this.ownerRepo.findOne({
+      where: { plateNumber: cleanPlate },
+    });
+    if (existingPlate) {
+      throw new BadRequestException('Plate number already registered');
+    }
+
+    const user = await this.userRepo.save(
+      this.userRepo.create({
+        phone,
+        role: UserRole.OWNER,
+        isActive: false,
+      }),
+    );
+    const profile = new OwnerProfile();
+    profile.user = user;
+    profile.fullName = clean(fullName);
+    profile.carType = clean(carType);
+    profile.plateNumber = cleanPlate;
+    profile.secondaryPhone = secondaryPhone ?? undefined;
+    profile.carFrontPhoto = files.carFront![0].path;
+    profile.carBackPhoto = files.carBack![0].path;
+    profile.driverLicensePhoto = files.driverLicense
+      ? files.driverLicense[0].path
+      : undefined;
+
+    try {
+      await this.ownerRepo.save(profile);
+    } catch (err) {
+      const code =
+        err instanceof QueryFailedError
+          ? (err.driverError as { code?: string })?.code
+          : undefined;
+      if (code === '23505') {
+        throw new BadRequestException('Plate number already registered');
+      }
+      throw err;
+    }
+
+    await this.sendOtp({ phone });
+
+    return {
+      message: 'Profile saved. OTP sent — verify to complete registration',
+    };
   }
 }

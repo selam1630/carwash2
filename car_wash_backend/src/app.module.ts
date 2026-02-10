@@ -6,6 +6,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from './modules/users/entities/user.entity';
 import { RefreshToken } from './modules/auth/entities/refresh-token.entities';
 import { AuthModule } from './modules/auth/auth.module';
+import { OwnerProfile } from './modules/users/entities/owner-profile.entity';
+import { WasherProfile } from './modules/users/entities/washer-profile.entity';
 
 @Module({
   imports: [
@@ -25,8 +27,8 @@ import { AuthModule } from './modules/auth/auth.module';
         username: config.get<string>('database.username'),
         password: config.get<string>('database.password'),
         database: config.get<string>('database.name'),
-        entities: [User, RefreshToken],
-        synchronize: true, // Set to false in production
+        entities: [User, RefreshToken, User, OwnerProfile, WasherProfile],
+        synchronize: true,
       }),
       inject: [ConfigService],
     }),
