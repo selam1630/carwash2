@@ -5,14 +5,22 @@ import {
   UseInterceptors,
   BadRequestException,
   UploadedFiles,
+  UseGuards,
+  Req,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { SendOtpDto } from './dto/send-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
+import { RegisterSalesDto } from './dto/register-sales.dto';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
 import { RegisterOwnerDto } from './dto/register-owner.dto';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { UserRole } from '../users/entities/user.entity';
+import type { JwtPayload } from './types/jwt-payload.type';
 import * as path from 'path';
 
 @Controller('auth')
@@ -68,7 +76,7 @@ export class AuthController {
           }
           cb(null, true);
         },
-        limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+        limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
       },
     ),
   )
@@ -89,5 +97,16 @@ export class AuthController {
     }
 
     return await this.authService.registerOwner(dto, files);
+  }
+
+  /** Admin-only: register a sales person. Sends OTP to their phone; they verify to activate. */
+  @Post('admin/register-sales')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  registerSales(
+    @Req() req: { user: JwtPayload },
+    @Body() dto: RegisterSalesDto,
+  ) {
+    return this.authService.registerSales(req.user, dto);
   }
 }

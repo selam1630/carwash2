@@ -19,7 +19,9 @@ import { ConfigService } from '@nestjs/config';
 import * as CryptoJS from 'crypto-js';
 import { Express } from 'express';
 import { OwnerProfile } from '../users/entities/owner-profile.entity';
+import { SalesProfile } from '../users/entities/sales-profile.entity';
 import { RegisterOwnerDto } from './dto/register-owner.dto';
+import { RegisterSalesDto } from './dto/register-sales.dto';
 
 @Injectable()
 export class AuthService {
@@ -37,6 +39,8 @@ export class AuthService {
     private config: ConfigService,
     @InjectRepository(OwnerProfile)
     private ownerRepo: Repository<OwnerProfile>,
+    @InjectRepository(SalesProfile)
+    private salesRepo: Repository<SalesProfile>,
   ) {
     this.redis.on('error', (err) =>
       this.logger.warn('Redis connection error: ' + err.message),
@@ -73,9 +77,9 @@ export class AuthService {
 
     await this.redis.del(key);
 
-    let user = await this.userRepo.findOne({
+    const user = await this.userRepo.findOne({
       where: { phone },
-      relations: ['ownerProfile'],
+      relations: ['ownerProfile', 'salesProfile'],
     });
     if (!user) {
       throw new UnauthorizedException(
@@ -144,7 +148,10 @@ export class AuthService {
       });
 
       const hash = (
-        CryptoJS.HmacSHA256(refreshToken, refreshSecret) as CryptoJS.lib.WordArray
+        CryptoJS.HmacSHA256(
+          refreshToken,
+          refreshSecret,
+        ) as CryptoJS.lib.WordArray
       ).toString();
       const stored = await this.refreshRepo.findOne({
         where: { tokenHash: hash, isRevoked: false, user: { id: payload.sub } },
@@ -249,6 +256,71 @@ export class AuthService {
 
     return {
       message: 'Profile saved. OTP sent — verify to complete registration',
+    };
+  }
+
+  /**
+   * Admin-only: register a sales person. Creates User (SALES, inactive) + SalesProfile, sends OTP.
+   * Sales person verifies OTP to activate and get tokens.
+   */
+  async registerSales(
+    adminUser: { id: string; role: string },
+    dto: RegisterSalesDto,
+  ) {
+    if (adminUser.role !== UserRole.ADMIN) {
+      throw new UnauthorizedException('Only admin can register sales persons');
+    }
+
+    const { phone, fullName, nationalId, bankDetails, sponsorNationalId } = dto;
+
+    const existingUser = await this.userRepo.findOne({ where: { phone } });
+    if (existingUser) {
+      throw new BadRequestException('Phone already registered');
+    }
+
+    const existingNationalId = await this.salesRepo.findOne({
+      where: { nationalId },
+    });
+    if (existingNationalId) {
+      throw new BadRequestException('National ID already registered');
+    }
+
+    const user = await this.userRepo.save(
+      this.userRepo.create({
+        phone,
+        role: UserRole.SALES,
+        isActive: false,
+      }),
+    );
+
+    const profile = this.salesRepo.create({
+      user,
+      fullName: fullName.trim(),
+      nationalId: nationalId.trim(),
+      bankDetails,
+      sponsorNationalId: sponsorNationalId.trim(),
+      nationalIdPhoto: dto.nationalIdPhoto ?? undefined,
+      sponsorNationalIdPhoto: dto.sponsorNationalIdPhoto ?? undefined,
+    });
+
+    try {
+      await this.salesRepo.save(profile);
+    } catch (err) {
+      const code =
+        err instanceof QueryFailedError
+          ? (err.driverError as { code?: string })?.code
+          : undefined;
+      if (code === '23505') {
+        throw new BadRequestException('National ID already registered');
+      }
+      throw err;
+    }
+
+    await this.sendOtp({ phone });
+
+    return {
+      message:
+        'Sales person registered. OTP sent to phone — they must verify to activate.',
     };
   }
 }

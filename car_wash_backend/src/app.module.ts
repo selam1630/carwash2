@@ -6,8 +6,10 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from './modules/users/entities/user.entity';
 import { RefreshToken } from './modules/auth/entities/refresh-token.entities';
 import { AuthModule } from './modules/auth/auth.module';
+import { UsersModule } from './modules/users/users.module';
 import { OwnerProfile } from './modules/users/entities/owner-profile.entity';
 import { WasherProfile } from './modules/users/entities/washer-profile.entity';
+import { SalesProfile } from './modules/users/entities/sales-profile.entity';
 
 @Module({
   imports: [
@@ -27,12 +29,19 @@ import { WasherProfile } from './modules/users/entities/washer-profile.entity';
         username: config.get<string>('database.username'),
         password: config.get<string>('database.password'),
         database: config.get<string>('database.name'),
-        entities: [User, RefreshToken, User, OwnerProfile, WasherProfile],
+        entities: [
+          User,
+          RefreshToken,
+          OwnerProfile,
+          WasherProfile,
+          SalesProfile,
+        ],
         synchronize: true,
       }),
       inject: [ConfigService],
     }),
     AuthModule,
+    UsersModule,
   ],
 })
 export class AppModule {}

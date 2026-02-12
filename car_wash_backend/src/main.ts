@@ -1,16 +1,20 @@
 import { NestFactory } from '@nestjs/core';
 import * as fs from 'fs';
-import * as path from 'path'; // Add this import
+import * as path from 'path';
 import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
 import { ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { AllExceptionsFilter } from './common/filters/http-exception.filter';
+import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const configService = app.get(ConfigService);
 
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  app.useGlobalFilters(new AllExceptionsFilter());
+  app.useGlobalInterceptors(new LoggingInterceptor());
   app.useStaticAssets(path.join(process.cwd(), 'uploads'), {
     prefix: '/uploads',
   });

@@ -8,6 +8,7 @@ import {
 import { RefreshToken } from '../../auth/entities/refresh-token.entities';
 import { OwnerProfile } from './owner-profile.entity';
 import { WasherProfile } from './washer-profile.entity';
+import { SalesProfile } from './sales-profile.entity';
 
 export enum UserRole {
   OWNER = 'OWNER',
@@ -42,4 +43,7 @@ export class User {
 
   @OneToOne(() => WasherProfile, (profile) => profile.user)
   washerProfile: WasherProfile;
+
+  @OneToOne(() => SalesProfile, (profile) => profile.user)
+  salesProfile: SalesProfile;
 }
