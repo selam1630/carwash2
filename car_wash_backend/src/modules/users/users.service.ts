@@ -12,6 +12,8 @@ import { WasherProfile } from './entities/washer-profile.entity';
 import { SalesProfile } from './entities/sales-profile.entity';
 import { UpdateOwnerProfileDto } from './dto/update-owner-profile.dto';
 import { UpdateSalesProfileDto } from './dto/update-sales-profile.dto';
+import { UpdateWasherProfileDto } from './dto/update-washer-profile.dto';
+import { SalesCommission } from './entities/sales-commission.entity';
 
 export interface JwtUserPayload {
   id: string;
@@ -21,6 +23,8 @@ export interface JwtUserPayload {
 @Injectable()
 export class UsersService {
   constructor(
+    @InjectRepository(SalesCommission)
+    private commissionRepo: Repository<SalesCommission>,
     @InjectRepository(User) private userRepo: Repository<User>,
     @InjectRepository(OwnerProfile) private ownerRepo: Repository<OwnerProfile>,
     @InjectRepository(WasherProfile)
@@ -78,6 +82,25 @@ export class UsersService {
     return this.salesRepo.save(profile);
   }
 
+  async updateWasherProfile(
+    user: JwtUserPayload | User,
+    dto: UpdateWasherProfileDto,
+  ): Promise<WasherProfile> {
+    if (user.role !== UserRole.WASHER) {
+      throw new BadRequestException('Only washers can update this');
+    }
+    const profile = await this.washerRepo.findOne({
+      where: { user: { id: user.id } },
+    });
+    if (!profile) {
+      throw new NotFoundException('Washer profile not found');
+    }
+    const { depositAmount, ...rest } = dto as UpdateWasherProfileDto & { depositAmount?: number };
+    Object.assign(profile, rest);
+    if (depositAmount !== undefined) profile.depositeAmount = depositAmount;
+    return this.washerRepo.save(profile);
+  }
+
   async uploadPhoto(
     user: JwtUserPayload | User,
     field: string,
@@ -111,5 +134,19 @@ export class UsersService {
       throw new BadRequestException('Photo upload not supported for this user role or field');
     }
     return { message: 'Uploaded', path };
+  }
+  async getMyCommissions(user: { id: string; role: string }): Promise<SalesCommission[]> {
+    if (user.role !== UserRole.SALES) {
+      throw new BadRequestException('Only sales can view commissions');
+    }
+    const salesProfile = await this.salesRepo.findOne({
+      where: { user: { id: user.id } },
+    });
+    if (!salesProfile) return [];
+    return this.commissionRepo.find({
+      where: { salesProfile: { id: salesProfile.id } },
+      relations: ['ownerProfile', 'ownerProfile.user'],
+      order: { createdAt: 'DESC' },
+    });
   }
 }

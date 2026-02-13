@@ -14,6 +14,7 @@ import {
 import { UsersService } from './users.service';
 import { UpdateOwnerProfileDto } from './dto/update-owner-profile.dto';
 import { UpdateSalesProfileDto } from './dto/update-sales-profile.dto';
+import { UpdateWasherProfileDto } from './dto/update-washer-profile.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
@@ -33,7 +34,7 @@ export class UsersController {
   @Patch('me')
   updateProfile(
     @Req() req: { user: JwtPayload },
-    @Body() dto: UpdateOwnerProfileDto | UpdateSalesProfileDto,
+    @Body() dto: UpdateOwnerProfileDto | UpdateSalesProfileDto | UpdateWasherProfileDto,
   ) {
     const { user } = req;
     if (user.role === 'OWNER') {
@@ -41,6 +42,9 @@ export class UsersController {
     }
     if (user.role === 'SALES') {
       return this.usersService.updateSalesProfile(user as any, dto as UpdateSalesProfileDto);
+    }
+    if (user.role === 'WASHER') {
+      return this.usersService.updateWasherProfile(user as any, dto as UpdateWasherProfileDto);
     }
     throw new BadRequestException('Profile update not supported for your role');
   }
@@ -71,5 +75,9 @@ export class UsersController {
     @UploadedFile() file: Express.Multer.File,
   ) {
     return this.usersService.uploadPhoto(req.user, field, file);
+  }
+  @Get('me/commissions')
+  getMyCommissions(@Req() req: { user: JwtPayload }) {
+    return this.usersService.getMyCommissions(req.user);
   }
 }

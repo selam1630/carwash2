@@ -22,12 +22,22 @@ import { OwnerProfile } from '../users/entities/owner-profile.entity';
 import { SalesProfile } from '../users/entities/sales-profile.entity';
 import { RegisterOwnerDto } from './dto/register-owner.dto';
 import { RegisterSalesDto } from './dto/register-sales.dto';
+import { RegisterWasherDto } from './dto/register-washer.dto';
+import {
+  SalesCommission,
+  CommissionStatus,
+} from '../users/entities/sales-commission.entity';
+import { WasherProfile } from '../users/entities/washer-profile.entity';
 
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
   constructor(
+    @InjectRepository(SalesProfile)
+    private salesRepo: Repository<SalesProfile>,
+    @InjectRepository(SalesCommission)
+    private salesCommissionRepo: Repository<SalesCommission>,
     @InjectRepository(User)
     private userRepo: Repository<User>,
     @InjectRepository(RefreshToken)
@@ -39,8 +49,8 @@ export class AuthService {
     private config: ConfigService,
     @InjectRepository(OwnerProfile)
     private ownerRepo: Repository<OwnerProfile>,
-    @InjectRepository(SalesProfile)
-    private salesRepo: Repository<SalesProfile>,
+    @InjectRepository(WasherProfile)
+    private washerRepo: Repository<WasherProfile>,
   ) {
     this.redis.on('error', (err) =>
       this.logger.warn('Redis connection error: ' + err.message),
@@ -79,16 +89,19 @@ export class AuthService {
 
     const user = await this.userRepo.findOne({
       where: { phone },
-      relations: ['ownerProfile', 'salesProfile'],
+      relations: ['ownerProfile', 'salesProfile', 'washerProfile'],
     });
     if (!user) {
       throw new UnauthorizedException(
         'No registration or account found for this phone',
       );
     }
-    // Activate if pending registration (owner must have profile; others just activate)
+    // Activate if pending registration (owner/washer must have profile; others just activate)
     if (!user.isActive) {
       if (user.role === UserRole.OWNER && !user.ownerProfile) {
+        throw new UnauthorizedException('Please complete registration first');
+      }
+      if (user.role === UserRole.WASHER && !user.washerProfile) {
         throw new UnauthorizedException('Please complete registration first');
       }
       user.isActive = true;
@@ -321,6 +334,162 @@ export class AuthService {
     return {
       message:
         'Sales person registered. OTP sent to phone — they must verify to activate.',
+    };
+  }
+
+  /**
+   * Admin-only: register a car washer. Creates User (WASHER, inactive) + WasherProfile, sends OTP.
+   * Washer verifies OTP to activate and get tokens.
+   */
+  async registerWasher(
+    adminUser: { id: string; role: string },
+    dto: RegisterWasherDto,
+  ) {
+    if (adminUser.role !== UserRole.ADMIN) {
+      throw new UnauthorizedException('Only admin can register car washers');
+    }
+
+    const { phone, fullName, nationalId, sponsorNationalId, bankDetails, depositeAmount } = dto;
+
+    const existingUser = await this.userRepo.findOne({ where: { phone } });
+    if (existingUser) {
+      throw new BadRequestException('Phone already registered');
+    }
+
+    const existingNationalId = await this.washerRepo.findOne({
+      where: { nationalId: nationalId.trim() },
+    });
+    if (existingNationalId) {
+      throw new BadRequestException('National ID already registered');
+    }
+
+    const user = await this.userRepo.save(
+      this.userRepo.create({
+        phone,
+        role: UserRole.WASHER,
+        isActive: false,
+      }),
+    );
+
+    const profile = this.washerRepo.create({
+      user,
+      phone,
+      fullName: fullName.trim(),
+      nationalId: nationalId.trim(),
+      sponsorNationalId: sponsorNationalId.trim(),
+      bankDetails,
+      depositeAmount: Number(depositeAmount),
+      mugShot: dto.mugShot ?? undefined,
+      nationalIdPhoto: dto.nationalIdPhoto ?? undefined,
+      sponsorNationalIdPhoto: dto.sponsorNationalIdPhoto ?? undefined,
+    });
+
+    try {
+      await this.washerRepo.save(profile);
+    } catch (err) {
+      const code =
+        err instanceof QueryFailedError
+          ? (err.driverError as { code?: string })?.code
+          : undefined;
+      if (code === '23505') {
+        throw new BadRequestException('National ID already registered');
+      }
+      throw err;
+    }
+
+    await this.sendOtp({ phone });
+
+    return {
+      message:
+        'Car washer registered. OTP sent to phone — they must verify to activate.',
+    };
+  }
+
+  /**
+   * Sales-only: register a car owner on behalf of a customer. Sales person gets commission.
+   */
+   async registerOwnerBySales(
+    salesUser: { id: string; role: string },
+    dto: RegisterOwnerDto,
+    files: {
+      carFront?: Express.Multer.File[];
+      carBack?: Express.Multer.File[];
+      driverLicense?: Express.Multer.File[];
+    },
+  ) {
+    if (salesUser.role !== UserRole.SALES) {
+      throw new UnauthorizedException('Only sales can register owners on behalf');
+    }
+
+    const salesProfile = await this.salesRepo.findOne({
+      where: { user: { id: salesUser.id } },
+    });
+    if (!salesProfile) {
+      throw new BadRequestException('Sales profile not found');
+    }
+
+    const { phone, fullName, carType, plateNumber, secondaryPhone } = dto;
+    const clean = (str: string) => str?.replace(/^"|"$/g, '').trim();
+
+    const existingUser = await this.userRepo.findOne({ where: { phone } });
+    if (existingUser) {
+      throw new BadRequestException('Phone already registered');
+    }
+
+    const cleanPlate = clean(plateNumber);
+    const existingPlate = await this.ownerRepo.findOne({
+      where: { plateNumber: cleanPlate },
+    });
+    if (existingPlate) {
+      throw new BadRequestException('Plate number already registered');
+    }
+
+    const user = await this.userRepo.save(
+      this.userRepo.create({
+        phone,
+        role: UserRole.OWNER,
+        isActive: false,
+      }),
+    );
+
+    const profile = new OwnerProfile();
+    profile.user = user;
+    profile.fullName = clean(fullName);
+    profile.carType = clean(carType);
+    profile.plateNumber = cleanPlate;
+    profile.secondaryPhone = secondaryPhone ?? undefined;
+    profile.carFrontPhoto = files.carFront![0].path;
+    profile.carBackPhoto = files.carBack![0].path;
+    profile.driverLicensePhoto = files.driverLicense?.[0]?.path;
+    profile.registeredBySales = salesProfile;
+
+    try {
+      await this.ownerRepo.save(profile);
+    } catch (err) {
+      const code =
+        err instanceof QueryFailedError
+          ? (err.driverError as { code?: string })?.code
+          : undefined;
+      if (code === '23505') {
+        throw new BadRequestException('Plate number already registered');
+      }
+      throw err;
+    }
+
+    const commissionAmount = Number(this.config.get<number>('commission.amountPerOwner') ?? 50);
+    await this.salesCommissionRepo.save(
+      this.salesCommissionRepo.create({
+        salesProfile,
+        ownerProfile: profile,
+        amount: commissionAmount,
+        status: CommissionStatus.PENDING,
+      }),
+    );
+
+    await this.sendOtp({ phone });
+
+    return {
+      message: 'Owner registered. OTP sent — they must verify to activate. Commission recorded.',
     };
   }
 }

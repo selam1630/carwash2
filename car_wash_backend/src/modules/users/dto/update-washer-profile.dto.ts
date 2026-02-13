@@ -1,18 +1,23 @@
-import { IsString, IsNumber, IsObject } from 'class-validator';
+import { IsString, IsNumber, IsObject, IsOptional } from 'class-validator';
 
 export class UpdateWasherProfileDto {
+  @IsOptional()
   @IsString()
-  fullName: string;
+  fullName?: string;
 
+  @IsOptional()
   @IsString()
-  nationalId: string;
+  nationalId?: string;
 
+  @IsOptional()
   @IsString()
-  sponsorNationalId: string;
+  sponsorNationalId?: string;
 
+  @IsOptional()
   @IsObject()
-  bankDetails: Record<string, any>;
+  bankDetails?: Record<string, unknown>;
 
+  @IsOptional()
   @IsNumber()
-  depositAmount: number;
+  depositAmount?: number;
 }

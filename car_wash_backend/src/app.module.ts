@@ -10,6 +10,10 @@ import { UsersModule } from './modules/users/users.module';
 import { OwnerProfile } from './modules/users/entities/owner-profile.entity';
 import { WasherProfile } from './modules/users/entities/washer-profile.entity';
 import { SalesProfile } from './modules/users/entities/sales-profile.entity';
+import { SalesCommission } from './modules/users/entities/sales-commission.entity';
+import { Plan } from './modules/plans/entities/plan.entity';
+import { OwnerSubscription } from './modules/plans/entities/owner-subscription.entity';
+import { PlansModule } from './modules/plans/plans.module';
 
 @Module({
   imports: [
@@ -35,6 +39,9 @@ import { SalesProfile } from './modules/users/entities/sales-profile.entity';
           OwnerProfile,
           WasherProfile,
           SalesProfile,
+          SalesCommission,
+          Plan,
+          OwnerSubscription,
         ],
         synchronize: true,
       }),
@@ -42,6 +49,7 @@ import { SalesProfile } from './modules/users/entities/sales-profile.entity';
     }),
     AuthModule,
     UsersModule,
+    PlansModule,
   ],
 })
 export class AppModule {}

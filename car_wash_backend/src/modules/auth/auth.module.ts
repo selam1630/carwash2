@@ -11,12 +11,21 @@ import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { OwnerProfile } from '../users/entities/owner-profile.entity';
 import { SalesProfile } from '../users/entities/sales-profile.entity';
+import { SalesCommission } from '../users/entities/sales-commission.entity';
+import { WasherProfile } from '../users/entities/washer-profile.entity';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
 @Module({
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
-    TypeOrmModule.forFeature([User, RefreshToken, OwnerProfile, SalesProfile]),
+    TypeOrmModule.forFeature([
+      User,
+      RefreshToken,
+      OwnerProfile,
+      SalesProfile,
+      SalesCommission,
+      WasherProfile,
+    ]),
     RedisModule.forRootAsync({
       useFactory: (config: ConfigService) => ({
         type: 'single',

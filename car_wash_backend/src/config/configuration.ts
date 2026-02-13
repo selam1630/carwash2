@@ -20,5 +20,8 @@ export default () => ({
     host:process.env.REDIS_HOST || 'localhost',
     port: parseInt(process.env.REDIS_PORT || '6379', 10),
     password: process.env.REDIS_PASSWORD,
+  },
+  commission:{
+    amountPerOwner:parseFloat(process.env.COMMISSION_PER_OWNER || '0.0'),
   }
 });

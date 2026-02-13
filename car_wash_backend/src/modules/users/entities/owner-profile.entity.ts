@@ -4,8 +4,10 @@ import {
   Column,
   OneToOne,
   JoinColumn,
+  ManyToOne,
 } from 'typeorm';
 import { User } from './user.entity';
+import { SalesProfile } from './sales-profile.entity';
 
 @Entity('owner_profiles')
 export class OwnerProfile {
@@ -36,4 +38,8 @@ export class OwnerProfile {
 
   @Column({ nullable: true })
   driverLicensePhoto?: string;
+
+  @ManyToOne(() => SalesProfile, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'registeredBySalesId' })
+  registeredBySales: SalesProfile | null;
 }

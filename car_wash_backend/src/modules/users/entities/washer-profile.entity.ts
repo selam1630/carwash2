@@ -28,13 +28,13 @@ export class WasherProfile {
   @Column({ unique: true })
   nationalId: string;
 
-  @Column()
+  @Column({ nullable: true })
   nationalIdPhoto: string;
 
   @Column()
   sponsorNationalId: string;
 
-  @Column()
+  @Column({ nullable: true })
   sponsorNationalIdPhoto: string;
 
   @Column('jsonb')
