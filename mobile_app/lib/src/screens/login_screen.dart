@@ -25,10 +25,30 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  void _logout() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Logout'),
+        content: const Text('Are you sure you want to logout and clear stored tokens?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Logout')),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    final client = ApiClient();
+    await client.logout();
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Logged out')));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Login')),
+      appBar: AppBar(title: const Text('Login'), actions: [
+        IconButton(onPressed: _logout, icon: const Icon(Icons.logout))
+      ]),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(

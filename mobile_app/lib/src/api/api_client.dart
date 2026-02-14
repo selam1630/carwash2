@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -9,20 +11,33 @@ class ApiClient {
 
   ApiClient()
       : dio = Dio(BaseOptions(baseUrl: dotenv.env['FLUTTER_API_BASE_URL'] ?? 'http://localhost:3000')) {
-    dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) async {
-      final token = await storage.read(key: 'access_token');
-      if (token != null) {
-        options.headers['Authorization'] = 'Bearer $token';
-      }
-      return handler.next(options);
-    }, onError: (e, handler) async {
-      if (e.response?.statusCode == 401) {
-        // TODO: attempt refresh using refresh token
-      }
-      return handler.next(e);
-    }));
+    dio.interceptors.add(InterceptorsWrapper(
+      onRequest: (options, handler) async {
+        final token = await storage.read(key: 'access_token');
+        if (token != null) {
+          options.headers['Authorization'] = 'Bearer $token';
+        }
+        return handler.next(options);
+      },
+      onError: (e, handler) async {
+        // Only attempt refresh for 401s and not when the user is calling refresh itself
+        final status = e.response?.statusCode;
+        final path = e.requestOptions.path;
+        if (status == 401 && !path.contains('/auth/refresh') && !path.contains('/auth/verify-otp')) {
+          try {
+            final retried = await _handle401AndRefresh(e);
+            if (retried != null) return handler.resolve(retried);
+          } catch (_) {
+            // fall through to next
+          }
+        }
+        return handler.next(e);
+      },
+    ));
   }
   final DeviceService _device = DeviceService();
+  bool _refreshing = false;
+  final List<Completer<void>> _refreshWaiters = [];
 
   Future<void> sendOtp(String phone) async {
     final resp = await dio.post('/auth/send-otp', data: {'phone': phone});
@@ -46,7 +61,9 @@ class ApiClient {
 
   Future<Map<String, dynamic>> refreshWithDevice(String refreshToken) async {
     final deviceId = await _device.getDeviceId();
-    final resp = await dio.post('/auth/refresh', data: {'refreshToken': refreshToken, 'deviceId': deviceId});
+    // Use a separate Dio instance to avoid interceptor recursion
+    final authDio = Dio(BaseOptions(baseUrl: dio.options.baseUrl));
+    final resp = await authDio.post('/auth/refresh', data: {'refreshToken': refreshToken, 'deviceId': deviceId});
     final data = resp.data as Map<String, dynamic>;
     final access = data['accessToken'] as String?;
     final refresh = data['refreshToken'] as String?;
@@ -55,6 +72,48 @@ class ApiClient {
       await storage.write(key: 'refresh_token', value: refresh);
     }
     return data;
+  }
+
+  Future<void> logout() async {
+    await storage.delete(key: 'access_token');
+    await storage.delete(key: 'refresh_token');
+    await storage.delete(key: 'device_id');
+  }
+
+  Future<Response<dynamic>?> _handle401AndRefresh(DioError error) async {
+    // If a refresh is already in progress, wait for it to finish
+    if (_refreshing) {
+      final c = Completer<void>();
+      _refreshWaiters.add(c);
+      await c.future;
+      // after refresh, retry the original request if access token exists
+      final access = await storage.read(key: 'access_token');
+      if (access == null) return null;
+      error.requestOptions.headers['Authorization'] = 'Bearer $access';
+      return dio.fetch(error.requestOptions);
+    }
+
+    _refreshing = true;
+    try {
+      final refreshToken = await storage.read(key: 'refresh_token');
+      if (refreshToken == null) return null;
+      final data = await refreshWithDevice(refreshToken);
+      final access = data['accessToken'] as String?;
+      if (access == null) return null;
+      // retry original request with new access token
+      error.requestOptions.headers['Authorization'] = 'Bearer $access';
+      final resp = await dio.fetch(error.requestOptions);
+      return resp;
+    } catch (e) {
+      await logout();
+      rethrow;
+    } finally {
+      _refreshing = false;
+      for (final c in _refreshWaiters) {
+        if (!c.isCompleted) c.complete();
+      }
+      _refreshWaiters.clear();
+    }
   }
 
   /// Register owner (multipart/form-data). Expects form fields and files.
