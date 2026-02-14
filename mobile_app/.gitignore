@@ -1,0 +1,9 @@
+/build/
+.dart_tool/
+.packages
+.pub/
+.env
+android/**/local.properties
+.idea/
+.vscode/
+*.iml

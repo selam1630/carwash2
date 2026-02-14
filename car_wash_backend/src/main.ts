@@ -19,6 +19,10 @@ async function bootstrap() {
     prefix: '/uploads',
   });
 
+  // Enable CORS for frontend access during development
+  // Allow all origins in dev; tighten in production.
+  app.enableCors({ origin: true, credentials: true });
+
   const uploadDirs = [
     'uploads/cars',
     'uploads/licenses',
