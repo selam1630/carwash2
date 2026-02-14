@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../services/device_service.dart';
 
 class ApiClient {
   final Dio dio;
@@ -21,6 +22,7 @@ class ApiClient {
       return handler.next(e);
     }));
   }
+  final DeviceService _device = DeviceService();
 
   Future<void> sendOtp(String phone) async {
     final resp = await dio.post('/auth/send-otp', data: {'phone': phone});
@@ -29,7 +31,22 @@ class ApiClient {
 
   /// Verify OTP and store tokens (access + refresh) in secure storage
   Future<Map<String, dynamic>> verifyOtp(String phone, String otp) async {
-    final resp = await dio.post('/auth/verify-otp', data: {'phone': phone, 'otp': otp});
+    final deviceId = await _device.getDeviceId();
+    final resp = await dio.post('/auth/verify-otp', data: {'phone': phone, 'otp': otp, 'deviceId': deviceId});
+    final data = resp.data as Map<String, dynamic>;
+    final access = data['accessToken'] as String?;
+    final refresh = data['refreshToken'] as String?;
+    if (access != null && refresh != null) {
+      await storage.write(key: 'access_token', value: access);
+      await storage.write(key: 'refresh_token', value: refresh);
+      await storage.write(key: 'device_id', value: deviceId);
+    }
+    return data;
+  }
+
+  Future<Map<String, dynamic>> refreshWithDevice(String refreshToken) async {
+    final deviceId = await _device.getDeviceId();
+    final resp = await dio.post('/auth/refresh', data: {'refreshToken': refreshToken, 'deviceId': deviceId});
     final data = resp.data as Map<String, dynamic>;
     final access = data['accessToken'] as String?;
     final refresh = data['refreshToken'] as String?;
@@ -38,5 +55,11 @@ class ApiClient {
       await storage.write(key: 'refresh_token', value: refresh);
     }
     return data;
+  }
+
+  /// Register owner (multipart/form-data). Expects form fields and files.
+  Future<dynamic> registerOwner(FormData form) async {
+    final resp = await dio.post('/auth/register-owner', data: form);
+    return resp.data;
   }
 }

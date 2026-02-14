@@ -11,6 +11,9 @@ export class RefreshToken {
 
   @Column({ nullable: true })
   deviceInfo?: string;
+  
+  @Column({ nullable: true })
+  deviceId?: string;
 
   @Column({ type: 'timestamp' })
   expiresAt: Date;

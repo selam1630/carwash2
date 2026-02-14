@@ -35,7 +35,9 @@ class _LoginScreenState extends State<LoginScreen> {
           children: [
             TextField(controller: _phoneController, decoration: const InputDecoration(labelText: 'Phone')),
             const SizedBox(height: 16),
-            ElevatedButton(onPressed: _sendOtp, child: const Text('Send OTP'))
+            ElevatedButton(onPressed: _sendOtp, child: const Text('Send OTP')),
+            const SizedBox(height: 8),
+            TextButton(onPressed: () => Navigator.pushNamed(context, '/register'), child: const Text('Register (owner)'))
           ],
         ),
       ),

@@ -132,10 +132,14 @@ export class AuthService {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 30);
 
+    // Save refresh token with optional deviceId (if provided by client)
+    const deviceId = (dto as any).deviceId ?? undefined;
+
     await this.refreshRepo.save({
       tokenHash: hash,
       user,
       expiresAt,
+      deviceId,
     });
 
     return {
@@ -150,7 +154,7 @@ export class AuthService {
     };
   }
 
-  async refresh(refreshToken: string) {
+  async refresh(refreshToken: string, deviceId?: string) {
     if (!refreshToken || typeof refreshToken !== 'string') {
       throw new BadRequestException('refreshToken is required');
     }
@@ -166,8 +170,13 @@ export class AuthService {
           refreshSecret,
         ) as CryptoJS.lib.WordArray
       ).toString();
+
+      // If deviceId provided, require matching deviceId on stored token
+      const whereClause: any = { tokenHash: hash, isRevoked: false, user: { id: payload.sub } };
+      if (deviceId) whereClause.deviceId = deviceId;
+
       const stored = await this.refreshRepo.findOne({
-        where: { tokenHash: hash, isRevoked: false, user: { id: payload.sub } },
+        where: whereClause,
       });
 
       if (!stored || new Date() > stored.expiresAt) {
@@ -192,13 +201,14 @@ export class AuthService {
       // Revoke old
       await this.refreshRepo.update(stored.id, { isRevoked: true });
 
-      // Save new
+      // Save new, preserving deviceId
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + 30);
       await this.refreshRepo.save({
         tokenHash: newHash,
         user,
         expiresAt,
+        deviceId: deviceId ?? stored.deviceId,
       });
 
       return { accessToken: newAccess, refreshToken: newRefresh };
