@@ -38,10 +38,6 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_carFront == null || _carBack == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please add car front and back photos')));
-      return;
-    }
 
     setState(() => _loading = true);
     final client = ApiClient();
@@ -60,8 +56,12 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
         return MultipartFile.fromBytes(bytes, filename: name);
       }
 
-      form.files.add(MapEntry('carFront', await _toMultipart(_carFront!, 'carFront.jpg')));
-      form.files.add(MapEntry('carBack', await _toMultipart(_carBack!, 'carBack.jpg')));
+      if (_carFront != null) {
+        form.files.add(MapEntry('carFront', await _toMultipart(_carFront!, 'carFront.jpg')));
+      }
+      if (_carBack != null) {
+        form.files.add(MapEntry('carBack', await _toMultipart(_carBack!, 'carBack.jpg')));
+      }
       if (_driverLicense != null) {
         form.files.add(MapEntry('driverLicense', await _toMultipart(_driverLicense!, 'driverLicense.jpg')));
       }
@@ -102,7 +102,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  ElevatedButton.icon(onPressed: () => _pick(ImageSource.camera, 'carFront'), icon: const Icon(Icons.camera_alt), label: const Text('Car Front')),
+                  ElevatedButton.icon(onPressed: () => _pick(ImageSource.camera, 'carFront'), icon: const Icon(Icons.camera_alt), label: const Text('Car Front (opt)')),
                   const SizedBox(width: 8),
                   if (_carFront != null) const Text('✓')
                 ],
@@ -110,7 +110,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
               const SizedBox(height: 8),
               Row(
                 children: [
-                  ElevatedButton.icon(onPressed: () => _pick(ImageSource.camera, 'carBack'), icon: const Icon(Icons.camera_alt), label: const Text('Car Back')),
+                  ElevatedButton.icon(onPressed: () => _pick(ImageSource.camera, 'carBack'), icon: const Icon(Icons.camera_alt), label: const Text('Car Back (opt)')),
                   const SizedBox(width: 8),
                   if (_carBack != null) const Text('✓')
                 ],

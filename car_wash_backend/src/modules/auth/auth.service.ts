@@ -256,11 +256,13 @@ export class AuthService {
     profile.carType = clean(carType);
     profile.plateNumber = cleanPlate;
     profile.secondaryPhone = secondaryPhone ?? undefined;
-    profile.carFrontPhoto = files.carFront![0].path;
-    profile.carBackPhoto = files.carBack![0].path;
-    profile.driverLicensePhoto = files.driverLicense
-      ? files.driverLicense[0].path
-      : undefined;
+    if (files.carFront && files.carFront.length > 0) {
+      profile.carFrontPhoto = files.carFront[0].path;
+    }
+    if (files.carBack && files.carBack.length > 0) {
+      profile.carBackPhoto = files.carBack[0].path;
+    }
+    profile.driverLicensePhoto = files.driverLicense ? files.driverLicense[0].path : undefined;
 
     try {
       await this.ownerRepo.save(profile);
@@ -468,8 +470,12 @@ export class AuthService {
     profile.carType = clean(carType);
     profile.plateNumber = cleanPlate;
     profile.secondaryPhone = secondaryPhone ?? undefined;
-    profile.carFrontPhoto = files.carFront![0].path;
-    profile.carBackPhoto = files.carBack![0].path;
+    if (files.carFront && files.carFront.length > 0) {
+      profile.carFrontPhoto = files.carFront[0].path;
+    }
+    if (files.carBack && files.carBack.length > 0) {
+      profile.carBackPhoto = files.carBack[0].path;
+    }
     profile.driverLicensePhoto = files.driverLicense?.[0]?.path;
     profile.registeredBySales = salesProfile;
 

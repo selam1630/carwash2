@@ -20,7 +20,6 @@ class ApiClient {
         return handler.next(options);
       },
       onError: (e, handler) async {
-        // Only attempt refresh for 401s and not when the user is calling refresh itself
         final status = e.response?.statusCode;
         final path = e.requestOptions.path;
         if (status == 401 && !path.contains('/auth/refresh') && !path.contains('/auth/verify-otp')) {
@@ -28,7 +27,6 @@ class ApiClient {
             final retried = await _handle401AndRefresh(e);
             if (retried != null) return handler.resolve(retried);
           } catch (_) {
-            // fall through to next
           }
         }
         return handler.next(e);

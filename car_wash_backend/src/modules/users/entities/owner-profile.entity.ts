@@ -27,10 +27,10 @@ export class OwnerProfile {
   @Column({ unique: true })
   plateNumber: string;
 
-  @Column()
+  @Column({ nullable: true })
   carFrontPhoto?: string;
 
-  @Column()
+  @Column({ nullable: true })
   carBackPhoto?: string;
 
   @Column({ nullable: true })

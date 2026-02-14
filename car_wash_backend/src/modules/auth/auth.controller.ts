@@ -92,12 +92,6 @@ export class AuthController {
     },
   ) {
  
-    if (!files.carFront || !files.carBack || !files.driverLicense) {
-      throw new BadRequestException(
-        'All three images (car front, car back, driver license) are required',
-      );
-    }
-
     return await this.authService.registerOwner(dto, files);
   }
 
@@ -164,9 +158,6 @@ export class AuthController {
       @UploadedFiles()
       files: { carFront?: Express.Multer.File[]; carBack?: Express.Multer.File[]; driverLicense?: Express.Multer.File[] },
     ) {
-      if (!files.carFront || !files.carBack || !files.driverLicense) {
-        throw new BadRequestException('All three images (car front, car back, driver license) are required');
-      }
       return this.authService.registerOwnerBySales(req.user, dto, files);
     }
   
