@@ -30,4 +30,7 @@ export class OwnerSubscription {
 
   @CreateDateColumn()
   createdAt: Date;
+
+  @Column({ default: false })
+  notified?: boolean;
 }

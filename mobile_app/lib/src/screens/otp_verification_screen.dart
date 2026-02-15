@@ -19,7 +19,8 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
     try {
       final data = await client.verifyOtp(widget.phone, otp);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Verified — welcome ${data['user']?['phone'] ?? ''}')));
-      Navigator.popUntil(context, (route) => route.isFirst);
+      // Navigate to subscription selection after verification
+      Navigator.pushReplacementNamed(context, '/subscriptions');
     } catch (err) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('OTP verify failed: $err')));
     }

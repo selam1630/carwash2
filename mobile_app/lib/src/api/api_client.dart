@@ -119,4 +119,16 @@ class ApiClient {
     final resp = await dio.post('/auth/register-owner', data: form);
     return resp.data;
   }
+
+  /// Get available plans
+  Future<List<dynamic>> getPlans() async {
+    final resp = await dio.get('/plans');
+    return resp.data as List<dynamic>;
+  }
+
+  /// Subscribe current authenticated owner to a plan
+  Future<dynamic> subscribe(String planId) async {
+    final resp = await dio.post('/subscriptions/subscribe/$planId');
+    return resp.data;
+  }
 }
