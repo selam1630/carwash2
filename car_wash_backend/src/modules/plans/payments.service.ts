@@ -68,17 +68,32 @@ export class PaymentsService {
         emailFromPhone = `${phoneDigits}@carwash.et`;
       }
 
-      const email = (emailFromUser || emailFromPhone || `user${uidSafe}@example.com`).toLowerCase();
+      const rawEmail = emailFromUser || emailFromPhone;
 
     /* ---------------------------------- */
     /* Chapa Payload (Correct Format)     */
     /* ---------------------------------- */
-    // validate email format
-    const emailClean = String(email).trim().toLowerCase();
-    const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailClean);
-    const safeEmail = emailValid ? emailClean : `user${uid}@example.com`;
+    const emailClean = String(rawEmail || '')
+      .trim()
+      .toLowerCase();
+
+    const emailValid = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(emailClean);
+    const fallbackEmailFromConfig = String(
+      this.config.get<string>('PAYMENT_FALLBACK_EMAIL') || '',
+    )
+      .trim()
+      .toLowerCase();
+    const fallbackEmailValid = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(
+      fallbackEmailFromConfig,
+    );
+    // Chapa can reject some custom domains in sandbox; use stable fallback when user email is missing.
+    const safeEmail = emailValid
+      ? emailClean
+      : fallbackEmailValid
+      ? fallbackEmailFromConfig
+      : 'carwash.customer@gmail.com';
     if (!emailValid) {
-      this.logger.warn(`Email '${email}' invalid for user ${user?.id}, falling back to ${safeEmail}`);
+      this.logger.warn(`Email '${rawEmail}' invalid for user ${user?.id}, falling back to ${safeEmail}`);
     }
 
     const payload = {
