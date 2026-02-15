@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../api/api_client.dart';
 
 class SubscriptionScreen extends StatefulWidget {
@@ -34,10 +36,55 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   Future<void> _subscribe(String planId) async {
     setState(() => _loading = true);
     try {
-      final res = await _client.subscribe(planId);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(res['message'] ?? 'Subscribed')));
-      // after subscribing, go back to home
-      Navigator.popUntil(context, (route) => route.isFirst);
+      // initialize payment (Chapa) and open checkout
+      final init = await _client.initializePayment(planId);
+      final txRef = init['txRef'] as String?;
+      // attempt to extract checkout url from chapa response
+      String? checkout;
+      try {
+        checkout = init['chapa']?['data']?['checkout_url'] as String? ?? init['chapa']?['data']?['url'] as String?;
+      } catch (_) {}
+
+      if (checkout != null) {
+        final uri = Uri.parse(checkout);
+        if (kIsWeb) {
+          // open in new tab for web
+          await launchUrl(uri, webOnlyWindowName: '_blank');
+        } else {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        }
+        // show verify button to confirm payment after redirect
+        showDialog(
+            context: context,
+            builder: (_) {
+              return AlertDialog(
+                title: const Text('Payment started'),
+                content: const Text('Complete the payment in the browser, then tap Verify to finish subscription.'),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Close')),
+                  ElevatedButton(
+                      onPressed: () async {
+                        Navigator.pop(context);
+                        setState(() => _loading = true);
+                        try {
+                          final ver = await _client.verifyPayment(txRef ?? '', planId);
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(ver['subscription'] != null ? 'Subscribed' : 'Verification failed')));
+                          Navigator.popUntil(context, (route) => route.isFirst);
+                        } catch (e) {
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Verification failed: $e')));
+                        } finally {
+                          setState(() => _loading = false);
+                        }
+                      },
+                      child: const Text('Verify'))
+                ],
+              );
+            });
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Payment initiated, please follow the checkout URL.')));
+      }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Subscription failed: $e')));
     } finally {

@@ -131,4 +131,16 @@ class ApiClient {
     final resp = await dio.post('/subscriptions/subscribe/$planId');
     return resp.data;
   }
+
+  /// Initialize Chapa payment for a plan; returns chapa initialization data
+  Future<Map<String, dynamic>> initializePayment(String planId) async {
+    final resp = await dio.post('/payments/initialize/$planId');
+    return resp.data as Map<String, dynamic>;
+  }
+
+  /// Verify chapa tx_ref after redirect
+  Future<Map<String, dynamic>> verifyPayment(String txRef, String planId) async {
+    final resp = await dio.get('/payments/verify', queryParameters: {'tx_ref': txRef, 'planId': planId});
+    return resp.data as Map<String, dynamic>;
+  }
 }
