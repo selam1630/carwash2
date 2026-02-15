@@ -15,6 +15,8 @@ import { SalesCommission } from './modules/users/entities/sales-commission.entit
 import { Plan } from './modules/plans/entities/plan.entity';
 import { OwnerSubscription } from './modules/plans/entities/owner-subscription.entity';
 import { PlansModule } from './modules/plans/plans.module';
+import { WashRequest } from './modules/wash/entities/wash-request.entity';
+import { WashModule } from './modules/wash/wash.module';
 
 @Module({
   imports: [
@@ -43,6 +45,7 @@ import { PlansModule } from './modules/plans/plans.module';
           SalesCommission,
           Plan,
           OwnerSubscription,
+          WashRequest,
         ],
         synchronize: true,
       }),
@@ -52,6 +55,7 @@ import { PlansModule } from './modules/plans/plans.module';
     AuthModule,
     UsersModule,
     PlansModule,
+    WashModule,
   ],
 })
 export class AppModule {}

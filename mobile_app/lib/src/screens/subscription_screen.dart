@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:dio/dio.dart';
 import '../api/api_client.dart';
 
 class SubscriptionScreen extends StatefulWidget {
@@ -36,10 +37,8 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   Future<void> _subscribe(String planId) async {
     setState(() => _loading = true);
     try {
-      // initialize payment (Chapa) and open checkout
       final init = await _client.initializePayment(planId);
-      final txRef = init['txRef'] as String?;
-      // attempt to extract checkout url from chapa response
+      final txRef = (init['txRef'] ?? init['tx_ref']) as String?;
       String? checkout;
       try {
         checkout = init['chapa']?['data']?['checkout_url'] as String? ?? init['chapa']?['data']?['url'] as String?;
@@ -67,13 +66,31 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                   ElevatedButton(
                       onPressed: () async {
                         Navigator.pop(context);
+                        if (txRef == null || txRef.trim().isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Missing transaction reference. Please re-initialize payment.')),
+                          );
+                          return;
+                        }
                         setState(() => _loading = true);
                         try {
-                          final ver = await _client.verifyPayment(txRef ?? '', planId);
+                          final ver = await _client.verifyPayment(txRef, planId);
                           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(ver['subscription'] != null ? 'Subscribed' : 'Verification failed')));
-                          Navigator.popUntil(context, (route) => route.isFirst);
+                          if (ver['subscription'] != null) {
+                            Navigator.pushReplacementNamed(context, '/request-wash');
+                          }
                         } catch (e) {
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Verification failed: $e')));
+                          String msg = '$e';
+                          if (e is DioException) {
+                            final data = e.response?.data;
+                            if (data is Map && data['message'] != null) {
+                              final message = data['message'];
+                              msg = message is List ? message.join(', ') : message.toString();
+                            } else if (data != null) {
+                              msg = data.toString();
+                            }
+                          }
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Verification failed: $msg')));
                         } finally {
                           setState(() => _loading = false);
                         }

@@ -4,6 +4,7 @@ import 'screens/registration_screen.dart';
 import 'screens/otp_verification_screen.dart';
 import 'screens/subscription_screen.dart';
 import 'screens/payments_complete_screen.dart';
+import 'screens/request_wash_screen.dart';
 
 class App extends StatelessWidget {
   const App({super.key});
@@ -23,6 +24,7 @@ class App extends StatelessWidget {
         }
         ,
         '/subscriptions': (_) => const SubscriptionScreen(),
+        '/request-wash': (_) => const RequestWashScreen(),
         '/payments/complete': (ctx) {
           final args = ModalRoute.of(ctx)!.settings.arguments as Map<String, dynamic>?;
           final txRef = args != null ? args['tx_ref'] as String? : null;

@@ -140,7 +140,52 @@ class ApiClient {
 
   /// Verify chapa tx_ref after redirect
   Future<Map<String, dynamic>> verifyPayment(String txRef, String planId) async {
-    final resp = await dio.get('/payments/verify', queryParameters: {'tx_ref': txRef, 'planId': planId});
+    final cleanTxRef = txRef.trim();
+    final cleanPlanId = planId.trim();
+    if (cleanTxRef.isEmpty || cleanPlanId.isEmpty) {
+      throw ArgumentError('txRef and planId are required for payment verification');
+    }
+    final resp = await dio.get('/payments/verify', queryParameters: {'tx_ref': cleanTxRef, 'planId': cleanPlanId});
     return resp.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> createWashRequest({
+    required double pickupLat,
+    required double pickupLng,
+  }) async {
+    final resp = await dio.post(
+      '/wash/requests',
+      data: {'pickupLat': pickupLat, 'pickupLng': pickupLng},
+    );
+    return resp.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>?> getActiveWashRequest() async {
+    final resp = await dio.get('/wash/requests/active');
+    if (resp.data == null) return null;
+    return resp.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> acceptWashRequest(String requestId) async {
+    final resp = await dio.post('/wash/requests/$requestId/accept');
+    return resp.data as Map<String, dynamic>;
+  }
+
+  Future<void> updateWasherLocation({
+    required String requestId,
+    required double lat,
+    required double lng,
+    double? heading,
+    double? speed,
+  }) async {
+    await dio.post(
+      '/wash/requests/$requestId/location',
+      data: {
+        'lat': lat,
+        'lng': lng,
+        if (heading != null) 'heading': heading,
+        if (speed != null) 'speed': speed,
+      },
+    );
   }
 }
