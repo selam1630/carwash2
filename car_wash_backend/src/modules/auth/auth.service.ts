@@ -121,7 +121,10 @@ export class AuthService {
 
     const refreshToken = this.jwtService.sign(
       { sub: user.id },
-      { expiresIn: this.config.get('jwt.refreshExpires') },
+      {
+        secret: this.config.get<string>('jwt.refreshSecret'),
+        expiresIn: this.config.get('jwt.refreshExpires'),
+      },
     );
 
     const secret = String(this.config.get('jwt.refreshSecret'));
@@ -191,7 +194,10 @@ export class AuthService {
       const newAccess = this.jwtService.sign({ sub: user.id, role: user.role });
       const newRefresh = this.jwtService.sign(
         { sub: user.id },
-        { expiresIn: '30d' },
+        {
+          secret: refreshSecret,
+          expiresIn: this.config.get('jwt.refreshExpires'),
+        },
       );
 
       const newHash = (

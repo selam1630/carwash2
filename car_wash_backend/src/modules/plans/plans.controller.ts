@@ -22,8 +22,6 @@ import type { JwtPayload } from '../auth/types/jwt-payload.type';
 @Controller('plans')
 export class PlansController {
   constructor(private plansService: PlansService) {}
-
-  /** Public: list active plans (for owners choosing a package). */
   @Get()
   findAll(@Query('activeOnly') activeOnly?: string) {
     return this.plansService.findAll(activeOnly === 'true');
