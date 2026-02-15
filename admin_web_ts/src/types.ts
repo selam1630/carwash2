@@ -25,6 +25,9 @@ export interface RegisterWasherPayload {
   sponsorNationalId: string;
   depositeAmount: number;
   bankDetails: BankDetails;
+  mugShot: string;
+  nationalIdPhoto?: string;
+  sponsorNationalIdPhoto?: string;
 }
 
 export interface RegisterSalesPayload {

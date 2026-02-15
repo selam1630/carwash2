@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
 import { API_BASE_URL, sendOtp, verifyOtp } from './api';
+import LoginScreen from './components/LoginScreen';
 import RegisterSalesTab from './components/RegisterSalesTab';
 import RegisterWasherTab from './components/RegisterWasherTab';
 import PlanManagementTab from './components/PlanManagementTab';
+import VerifyOtpScreen from './components/VerifyOtpScreen';
 import type { AuthUser } from './types';
 
 const TOKEN_KEY = 'admin_access_token';
@@ -133,70 +135,29 @@ export default function App() {
         ) : null}
 
         {page === 'login' ? (
-          <section className="card">
-            <h2>Admin Login</h2>
-            <p className="hint">Enter admin phone and send OTP.</p>
-
-            <form onSubmit={onSendOtp} className="grid">
-              <label>
-                Admin Phone (+2519xxxxxxxx)
-                <input
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="+2519xxxxxxxx"
-                />
-              </label>
-              <button type="submit">Send OTP</button>
-            </form>
-
-            <div className="actions">
-              <button className="secondary" type="button" onClick={() => setPage('landing')}>
-                Back
-              </button>
-            </div>
-            {authMessage ? <p className="status">{authMessage}</p> : null}
-          </section>
+          <LoginScreen
+            phone={phone}
+            authMessage={authMessage}
+            onPhoneChange={setPhone}
+            onSendOtp={onSendOtp}
+            onBack={() => setPage('landing')}
+          />
         ) : null}
 
         {page === 'verify' ? (
-          <section className="card">
-            <h2>Verify OTP</h2>
-            <p className="hint">{authHint}</p>
-
-            <form onSubmit={onVerifyOtp} className="grid">
-              <label>
-                Phone (+2519xxxxxxxx)
-                <input
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="+2519xxxxxxxx"
-                />
-              </label>
-              <label>
-                OTP Code
-                <input value={otp} onChange={(e) => setOtp(e.target.value)} placeholder="123456" />
-              </label>
-              <button type="submit">Verify OTP</button>
-            </form>
-
-            <label>
-              Or paste Access Token
-              <textarea
-                rows={3}
-                value={token}
-                onChange={(e) => onTokenChange(e.target.value)}
-                placeholder="Paste admin access token"
-              />
-            </label>
-            <div className="actions">
-              <button className="secondary" type="button" onClick={() => setPage('login')}>
-                Back to Login
-              </button>
-            </div>
-
-            {authMessage ? <p className="status">{authMessage}</p> : null}
-            {!isAdmin && token ? <p className="status error">Current user is not ADMIN.</p> : null}
-          </section>
+          <VerifyOtpScreen
+            phone={phone}
+            otp={otp}
+            token={token}
+            authHint={authHint}
+            authMessage={authMessage}
+            isAdmin={isAdmin}
+            onPhoneChange={setPhone}
+            onOtpChange={setOtp}
+            onTokenChange={onTokenChange}
+            onVerifyOtp={onVerifyOtp}
+            onBackToLogin={() => setPage('login')}
+          />
         ) : null}
 
         {page === 'washer' ? (

@@ -10,6 +10,9 @@ type WasherFormState = {
   bankName: string;
   accountNumber: string;
   depositeAmount: string;
+  mugShot: string;
+  nationalIdPhoto: string;
+  sponsorNationalIdPhoto: string;
 };
 
 const initialWasherForm: WasherFormState = {
@@ -20,6 +23,9 @@ const initialWasherForm: WasherFormState = {
   bankName: '',
   accountNumber: '',
   depositeAmount: '',
+  mugShot: '',
+  nationalIdPhoto: '',
+  sponsorNationalIdPhoto: '',
 };
 
 type Props = {
@@ -61,6 +67,13 @@ export default function RegisterWasherTab({ token, isAdmin }: Props) {
         bankName: form.bankName.trim(),
         accountNumber: form.accountNumber.trim(),
       },
+      mugShot: form.mugShot.trim(),
+      ...(form.nationalIdPhoto.trim()
+        ? { nationalIdPhoto: form.nationalIdPhoto.trim() }
+        : {}),
+      ...(form.sponsorNationalIdPhoto.trim()
+        ? { sponsorNationalIdPhoto: form.sponsorNationalIdPhoto.trim() }
+        : {}),
     };
 
     setSubmitting(true);
@@ -107,6 +120,31 @@ export default function RegisterWasherTab({ token, isAdmin }: Props) {
         <label>
           Deposit Amount
           <input type="number" step="0.01" min="0" value={form.depositeAmount} onChange={(e) => updateField('depositeAmount', e.target.value)} required />
+        </label>
+        <label>
+          Mug Shot (URL or file path)
+          <input
+            value={form.mugShot}
+            onChange={(e) => updateField('mugShot', e.target.value)}
+            placeholder="https://... or uploads/mugshots/file.jpg"
+            required
+          />
+        </label>
+        <label>
+          National ID Photo (optional URL/path)
+          <input
+            value={form.nationalIdPhoto}
+            onChange={(e) => updateField('nationalIdPhoto', e.target.value)}
+            placeholder="https://... or uploads/ids/file.jpg"
+          />
+        </label>
+        <label>
+          Sponsor ID Photo (optional URL/path)
+          <input
+            value={form.sponsorNationalIdPhoto}
+            onChange={(e) => updateField('sponsorNationalIdPhoto', e.target.value)}
+            placeholder="https://... or uploads/ids/file.jpg"
+          />
         </label>
         <button type="submit" disabled={submitting || !isAdmin}>
           {submitting ? 'Registering...' : 'Register Biker'}

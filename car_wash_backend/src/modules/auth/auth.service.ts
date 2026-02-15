@@ -369,8 +369,17 @@ export class AuthService {
 
     const { phone, fullName, nationalId, sponsorNationalId, bankDetails, depositeAmount } = dto;
 
-    const existingUser = await this.userRepo.findOne({ where: { phone } });
-    if (existingUser) {
+    const existingUser = await this.userRepo.findOne({
+      where: { phone },
+      relations: ['washerProfile'],
+    });
+    const canRecoverPartialWasher =
+      !!existingUser &&
+      existingUser.role === UserRole.WASHER &&
+      !existingUser.isActive &&
+      !existingUser.washerProfile;
+
+    if (existingUser && !canRecoverPartialWasher) {
       throw new BadRequestException('Phone already registered');
     }
 
@@ -381,13 +390,16 @@ export class AuthService {
       throw new BadRequestException('National ID already registered');
     }
 
-    const user = await this.userRepo.save(
-      this.userRepo.create({
-        phone,
-        role: UserRole.WASHER,
-        isActive: false,
-      }),
-    );
+    const user =
+      existingUser && canRecoverPartialWasher
+        ? existingUser
+        : await this.userRepo.save(
+            this.userRepo.create({
+              phone,
+              role: UserRole.WASHER,
+              isActive: false,
+            }),
+          );
 
     const profile = this.washerRepo.create({
       user,

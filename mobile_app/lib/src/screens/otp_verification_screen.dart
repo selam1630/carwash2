@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
 import '../api/api_client.dart';
 
 class OtpVerificationScreen extends StatefulWidget {
@@ -22,7 +23,17 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
       // Navigate to subscription selection after verification
       Navigator.pushReplacementNamed(context, '/subscriptions');
     } catch (err) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('OTP verify failed: $err')));
+      String msg = '$err';
+      if (err is DioException) {
+        final data = err.response?.data;
+        if (data is Map && data['message'] != null) {
+          final message = data['message'];
+          msg = message is List ? message.join(', ') : message.toString();
+        } else if (data != null) {
+          msg = data.toString();
+        }
+      }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('OTP verify failed: $msg')));
     }
   }
 

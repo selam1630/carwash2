@@ -25,6 +25,20 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  void _goToVerifyWithoutResend() {
+    final phone = _phoneController.text.trim();
+    if (phone.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter phone number first')),
+      );
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => OtpVerificationScreen(phone: phone)),
+    );
+  }
+
   void _logout() async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -56,6 +70,11 @@ class _LoginScreenState extends State<LoginScreen> {
             TextField(controller: _phoneController, decoration: const InputDecoration(labelText: 'Phone')),
             const SizedBox(height: 16),
             ElevatedButton(onPressed: _sendOtp, child: const Text('Send OTP')),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: _goToVerifyWithoutResend,
+              child: const Text('I already have OTP'),
+            ),
             const SizedBox(height: 8),
             TextButton(onPressed: () => Navigator.pushNamed(context, '/register'), child: const Text('Register (owner)'))
           ],
