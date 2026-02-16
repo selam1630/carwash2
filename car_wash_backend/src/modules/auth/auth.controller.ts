@@ -12,6 +12,7 @@ import { AuthService } from './auth.service';
 import { SendOtpDto } from './dto/send-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { PhoneLoginDto } from './dto/phone-login.dto';
 import { RegisterSalesDto } from './dto/register-sales.dto';
 import { RegisterWasherDto } from './dto/register-washer.dto';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
@@ -42,6 +43,11 @@ export class AuthController {
   @Post('refresh')
   refresh(@Body() dto: RefreshTokenDto) {
     return this.authService.refresh(dto.refreshToken, dto.deviceId);
+  }
+
+  @Post('phone-login')
+  phoneLogin(@Body() dto: PhoneLoginDto) {
+    return this.authService.phoneLogin(dto);
   }
   @Post('register-owner')
   @UseInterceptors(

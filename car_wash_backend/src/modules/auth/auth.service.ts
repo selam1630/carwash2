@@ -11,6 +11,7 @@ import { User, UserRole } from '../users/entities/user.entity';
 import { RefreshToken } from './entities/refresh-token.entities';
 import { SendOtpDto } from './dto/send-otp.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
+import { PhoneLoginDto } from './dto/phone-login.dto';
 import { SmsService } from './sms.service';
 import { InjectRedis } from '@nestjs-modules/ioredis';
 import type { Redis } from 'ioredis';
@@ -108,53 +109,20 @@ export class AuthService {
       await this.userRepo.save(user);
     }
 
-    // Invalidate old sessions (single device)
-    await this.refreshRepo.update(
-      { user: { id: user.id } },
-      { isRevoked: true },
-    );
-
-    const accessToken = this.jwtService.sign(
-      { sub: user.id, role: user.role },
-      { expiresIn: this.config.get('jwt.accessExpires') },
-    );
-
-    const refreshToken = this.jwtService.sign(
-      { sub: user.id },
-      {
-        secret: this.config.get<string>('jwt.refreshSecret'),
-        expiresIn: this.config.get('jwt.refreshExpires'),
-      },
-    );
-
-    const secret = String(this.config.get('jwt.refreshSecret'));
-    const hash: string = (
-      CryptoJS.HmacSHA256(refreshToken, secret) as CryptoJS.lib.WordArray
-    ).toString();
-
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 30);
-
-    // Save refresh token with optional deviceId (if provided by client)
     const deviceId = (dto as any).deviceId ?? undefined;
+    return this.issueSessionForUser(user, deviceId);
+  }
 
-    await this.refreshRepo.save({
-      tokenHash: hash,
-      user,
-      expiresAt,
-      deviceId,
-    });
-
-    return {
-      accessToken,
-      refreshToken,
-      user: {
-        id: user.id,
-        phone: user.phone,
-        role: user.role,
-        isActive: user.isActive,
-      },
-    };
+  async phoneLogin(dto: PhoneLoginDto) {
+    const { phone, deviceId } = dto;
+    const user = await this.userRepo.findOne({ where: { phone } });
+    if (!user) {
+      throw new UnauthorizedException('No account found for this phone');
+    }
+    if (!user.isActive) {
+      throw new UnauthorizedException('Account is not active. Verify OTP first');
+    }
+    return this.issueSessionForUser(user, deviceId);
   }
 
   async refresh(refreshToken: string, deviceId?: string) {
@@ -224,6 +192,53 @@ export class AuthService {
       }
       throw new UnauthorizedException('Invalid refresh token');
     }
+  }
+
+  private async issueSessionForUser(user: User, deviceId?: string) {
+    // Invalidate old sessions (single device)
+    await this.refreshRepo.update(
+      { user: { id: user.id } },
+      { isRevoked: true },
+    );
+
+    const accessToken = this.jwtService.sign(
+      { sub: user.id, role: user.role },
+      { expiresIn: this.config.get('jwt.accessExpires') },
+    );
+
+    const refreshToken = this.jwtService.sign(
+      { sub: user.id },
+      {
+        secret: this.config.get<string>('jwt.refreshSecret'),
+        expiresIn: this.config.get('jwt.refreshExpires'),
+      },
+    );
+
+    const secret = String(this.config.get('jwt.refreshSecret'));
+    const hash: string = (
+      CryptoJS.HmacSHA256(refreshToken, secret) as CryptoJS.lib.WordArray
+    ).toString();
+
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 30);
+
+    await this.refreshRepo.save({
+      tokenHash: hash,
+      user,
+      expiresAt,
+      deviceId,
+    });
+
+    return {
+      accessToken,
+      refreshToken,
+      user: {
+        id: user.id,
+        phone: user.phone,
+        role: user.role,
+        isActive: user.isActive,
+      },
+    };
   }
   async registerOwner(
     dto: RegisterOwnerDto,

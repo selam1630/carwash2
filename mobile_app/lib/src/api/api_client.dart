@@ -9,12 +9,22 @@ import '../services/device_service.dart';
 class ApiClient {
   final Dio dio;
   final FlutterSecureStorage storage = const FlutterSecureStorage();
+  static String? _accessTokenMem;
+  static String? _refreshTokenMem;
+  static String? _userPhoneMem;
+  static String? _userRoleMem;
 
   ApiClient()
       : dio = Dio(BaseOptions(baseUrl: dotenv.env['FLUTTER_API_BASE_URL'] ?? 'http://localhost:3000')) {
     dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
-        final token = await storage.read(key: 'access_token');
+        var token = _accessTokenMem;
+        if (token == null || token.isEmpty) {
+          token = await storage.read(key: 'access_token');
+          if (token != null && token.isNotEmpty) {
+            _accessTokenMem = token;
+          }
+        }
         if (token != null) {
           options.headers['Authorization'] = 'Bearer $token';
         }
@@ -23,7 +33,10 @@ class ApiClient {
       onError: (e, handler) async {
         final status = e.response?.statusCode;
         final path = e.requestOptions.path;
-        if (status == 401 && !path.contains('/auth/refresh') && !path.contains('/auth/verify-otp')) {
+        if (status == 401 &&
+            !path.contains('/auth/refresh') &&
+            !path.contains('/auth/verify-otp') &&
+            !path.contains('/auth/phone-login')) {
           try {
             final retried = await _handle401AndRefresh(e);
             if (retried != null) return handler.resolve(retried);
@@ -54,13 +67,17 @@ class ApiClient {
     final userPhone = user?['phone']?.toString();
     final userRole = user?['role']?.toString();
     if (access != null && refresh != null) {
+      _accessTokenMem = access;
+      _refreshTokenMem = refresh;
       await storage.write(key: 'access_token', value: access);
       await storage.write(key: 'refresh_token', value: refresh);
       await storage.write(key: 'device_id', value: deviceId);
       if (userPhone != null && userPhone.isNotEmpty) {
+        _userPhoneMem = userPhone;
         await storage.write(key: 'user_phone', value: userPhone);
       }
       if (userRole != null && userRole.isNotEmpty) {
+        _userRoleMem = userRole;
         await storage.write(key: 'user_role', value: userRole);
       }
     }
@@ -76,6 +93,8 @@ class ApiClient {
     final access = data['accessToken'] as String?;
     final refresh = data['refreshToken'] as String?;
     if (access != null && refresh != null) {
+      _accessTokenMem = access;
+      _refreshTokenMem = refresh;
       await storage.write(key: 'access_token', value: access);
       await storage.write(key: 'refresh_token', value: refresh);
     }
@@ -83,6 +102,10 @@ class ApiClient {
   }
 
   Future<void> logout() async {
+    _accessTokenMem = null;
+    _refreshTokenMem = null;
+    _userPhoneMem = null;
+    _userRoleMem = null;
     await storage.delete(key: 'access_token');
     await storage.delete(key: 'refresh_token');
     await storage.delete(key: 'device_id');
@@ -91,15 +114,49 @@ class ApiClient {
   }
 
   /// For already-verified users on the same phone: refresh session without OTP.
-  /// Requires the stored refresh token + matching phone.
+  /// Active users can login directly with phone.
   Future<String?> loginWithPhoneOnly(String phone) async {
-    final savedPhone = await storage.read(key: 'user_phone');
-    final refreshToken = await storage.read(key: 'refresh_token');
-    if (savedPhone == null || refreshToken == null) return null;
-    if (savedPhone.trim() != phone.trim()) return null;
+    // Clear current tab memory to avoid stale in-tab tokens before login.
+    _accessTokenMem = null;
+    _refreshTokenMem = null;
+    _userPhoneMem = null;
+    _userRoleMem = null;
 
-    await refreshWithDevice(refreshToken);
-    return await storage.read(key: 'user_role');
+    final deviceId = await _device.getDeviceId();
+    // Use a clean client without auth/refresh interceptors for deterministic login.
+    final authDio = Dio(BaseOptions(baseUrl: dio.options.baseUrl));
+    final resp = await authDio.post('/auth/phone-login', data: {
+      'phone': phone.trim(),
+      'deviceId': deviceId,
+    });
+    final data = _asMap(resp.data);
+    final access = data['accessToken']?.toString();
+    final refresh = data['refreshToken']?.toString();
+    final user = data['user'];
+    String? role;
+    String? userPhone;
+    if (user is Map) {
+      role = user['role']?.toString();
+      userPhone = user['phone']?.toString();
+    }
+
+    if (access != null && access.isNotEmpty && refresh != null && refresh.isNotEmpty) {
+      _accessTokenMem = access;
+      _refreshTokenMem = refresh;
+      await storage.write(key: 'access_token', value: access);
+      await storage.write(key: 'refresh_token', value: refresh);
+      await storage.write(key: 'device_id', value: deviceId);
+      if (userPhone != null && userPhone.isNotEmpty) {
+        _userPhoneMem = userPhone;
+        await storage.write(key: 'user_phone', value: userPhone);
+      }
+      if (role != null && role.isNotEmpty) {
+        _userRoleMem = role;
+        await storage.write(key: 'user_role', value: role);
+      }
+    }
+
+    return role;
   }
 
   Future<Response<dynamic>?> _handle401AndRefresh(DioError error) async {
@@ -109,7 +166,13 @@ class ApiClient {
       _refreshWaiters.add(c);
       await c.future;
       // after refresh, retry the original request if access token exists
-      final access = await storage.read(key: 'access_token');
+      var access = _accessTokenMem;
+      if (access == null || access.isEmpty) {
+        access = await storage.read(key: 'access_token');
+        if (access != null && access.isNotEmpty) {
+          _accessTokenMem = access;
+        }
+      }
       if (access == null) return null;
       error.requestOptions.headers['Authorization'] = 'Bearer $access';
       return dio.fetch(error.requestOptions);
@@ -117,7 +180,13 @@ class ApiClient {
 
     _refreshing = true;
     try {
-      final refreshToken = await storage.read(key: 'refresh_token');
+      var refreshToken = _refreshTokenMem;
+      if (refreshToken == null || refreshToken.isEmpty) {
+        refreshToken = await storage.read(key: 'refresh_token');
+        if (refreshToken != null && refreshToken.isNotEmpty) {
+          _refreshTokenMem = refreshToken;
+        }
+      }
       if (refreshToken == null) return null;
       final data = await refreshWithDevice(refreshToken);
       final access = data['accessToken'] as String?;

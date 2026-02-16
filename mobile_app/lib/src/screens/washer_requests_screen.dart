@@ -1,9 +1,11 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'dart:async';
 
 import '../api/api_client.dart';
+import '../services/wash_socket_service.dart';
 
 class WasherRequestsScreen extends StatefulWidget {
   const WasherRequestsScreen({super.key});
@@ -14,15 +16,89 @@ class WasherRequestsScreen extends StatefulWidget {
 
 class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
   final ApiClient _api = ApiClient();
+  final WashSocketService _socket = WashSocketService();
+  final FlutterSecureStorage _storage = const FlutterSecureStorage();
   bool _loading = true;
   List<dynamic> _requests = [];
   bool _online = false;
   Timer? _presenceTimer;
+  String _currentPhone = '';
+  String _currentRole = '';
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _bootstrap();
+  }
+
+  Future<void> _bootstrap() async {
+    final phone = await _storage.read(key: 'user_phone') ?? '';
+    final role = await _storage.read(key: 'user_role') ?? '';
+    if (mounted) {
+      setState(() {
+        _currentPhone = phone;
+        _currentRole = role.toUpperCase();
+      });
+    }
+
+    await _socket.connect();
+    _socket.listenRequestCreated((event) {
+      if (!mounted) return;
+      final requestId = event['requestId']?.toString();
+      if (requestId == null || requestId.isEmpty) return;
+
+      setState(() {
+        final exists = _requests.any((r) {
+          if (r is Map) {
+            final id = (r['id'] ?? r['requestId'] ?? '').toString();
+            return id == requestId;
+          }
+          return false;
+        });
+        if (exists) return;
+        _requests = [
+          {
+            'id': requestId,
+            'pickupLat': event['pickupLat'],
+            'pickupLng': event['pickupLng'],
+            'status': event['status'],
+          },
+          ..._requests,
+        ];
+      });
+    });
+
+    _socket.listenRequestAccepted((event) {
+      if (!mounted) return;
+      final requestId = event['requestId']?.toString();
+      if (requestId == null || requestId.isEmpty) return;
+      setState(() {
+        _requests = _requests.where((r) {
+          if (r is Map) {
+            final id = (r['id'] ?? r['requestId'] ?? '').toString();
+            return id != requestId;
+          }
+          return true;
+        }).toList();
+      });
+    });
+
+    _socket.listenRequestCompleted((event) {
+      if (!mounted) return;
+      final requestId = event['requestId']?.toString();
+      if (requestId == null || requestId.isEmpty) return;
+      setState(() {
+        _requests = _requests.where((r) {
+          if (r is Map) {
+            final id = (r['id'] ?? r['requestId'] ?? '').toString();
+            return id != requestId;
+          }
+          return true;
+        }).toList();
+      });
+    });
+
+    await _load();
   }
 
   Future<void> _load() async {
@@ -33,10 +109,18 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
     } catch (e) {
       String msg = '$e';
       if (e is DioException) {
+        String? backendMessage;
         final data = e.response?.data;
         if (data is Map && data['message'] != null) {
           final m = data['message'];
-          msg = m is List ? m.join(', ') : m.toString();
+          backendMessage = m is List ? m.join(', ') : m.toString();
+        }
+        if (e.response?.statusCode == 403) {
+          msg =
+              'Insufficient permission for Accept. Logged role: ${_currentRole.isEmpty ? "-" : _currentRole}.'
+              '${backendMessage != null ? ' Server: $backendMessage' : ''}';
+        } else if (backendMessage != null) {
+          msg = backendMessage;
         }
       }
       if (mounted) {
@@ -117,6 +201,7 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
   @override
   void dispose() {
     _presenceTimer?.cancel();
+    _socket.dispose();
     super.dispose();
   }
 
@@ -137,31 +222,56 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : _requests.isEmpty
-              ? const Center(child: Text('No open requests'))
-              : ListView.builder(
-                  itemCount: _requests.length,
-                  itemBuilder: (ctx, i) {
-                    final r = _requests[i] as Map<String, dynamic>;
-                    final id = (r['id'] ?? r['requestId'] ?? '').toString();
-                    final owner = r['owner'] as Map<String, dynamic>?;
-                    final ownerPhone = owner != null ? (owner['phone'] ?? '').toString() : '';
-                    final pickupLat = r['pickupLat'];
-                    final pickupLng = r['pickupLng'];
-
-                    return Card(
-                      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      child: ListTile(
-                        title: Text(ownerPhone.isNotEmpty ? 'Owner: $ownerPhone' : 'Wash Request'),
-                        subtitle: Text('Pickup: $pickupLat, $pickupLng'),
-                        trailing: ElevatedButton(
-                          onPressed: id.isEmpty ? null : () => _accept(id),
-                          child: const Text('Accept'),
-                        ),
-                      ),
-                    );
-                  },
+          : Column(
+              children: [
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.blueGrey.shade50,
+                    border: Border.all(color: Colors.blueGrey.shade100),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Logged in as', style: TextStyle(fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 4),
+                      Text('Phone: ${_currentPhone.isEmpty ? "-" : _currentPhone}'),
+                      Text('Role: ${_currentRole.isEmpty ? "-" : _currentRole}'),
+                    ],
+                  ),
                 ),
+                Expanded(
+                  child: _requests.isEmpty
+                      ? const Center(child: Text('No open requests'))
+                      : ListView.builder(
+                          itemCount: _requests.length,
+                          itemBuilder: (ctx, i) {
+                            final r = _requests[i] as Map<String, dynamic>;
+                            final id = (r['id'] ?? r['requestId'] ?? '').toString();
+                            final owner = r['owner'] as Map<String, dynamic>?;
+                            final ownerPhone = owner != null ? (owner['phone'] ?? '').toString() : '';
+                            final pickupLat = r['pickupLat'];
+                            final pickupLng = r['pickupLng'];
+
+                            return Card(
+                              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              child: ListTile(
+                                title: Text(ownerPhone.isNotEmpty ? 'Owner: $ownerPhone' : 'Wash Request'),
+                                subtitle: Text('Pickup: $pickupLat, $pickupLng'),
+                                trailing: ElevatedButton(
+                                  onPressed: id.isEmpty ? null : () => _accept(id),
+                                  child: const Text('Accept'),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
     );
   }
 }

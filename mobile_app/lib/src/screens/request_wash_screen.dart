@@ -21,7 +21,7 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
 
   LatLng? _ownerLocation;
   LatLng? _washerLocation;
-  List<LatLng> _nearbyWasherMarkers = [];
+  List<_NearbyWasher> _nearbyWashers = [];
   String? _requestId;
   String _status = 'Ready to request a wash';
   bool _loading = false;
@@ -42,7 +42,22 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
 
     _socket.listenRequestAccepted((event) {
       if (_requestId == null || event['requestId'] != _requestId) return;
-      setState(() => _status = 'Car washer accepted your request');
+      final acceptedWasherId = event['washerId']?.toString();
+      LatLng? acceptedLocation;
+      if (acceptedWasherId != null && acceptedWasherId.isNotEmpty) {
+        for (final w in _nearbyWashers) {
+          if (w.washerId == acceptedWasherId) {
+            acceptedLocation = LatLng(w.lat, w.lng);
+            break;
+          }
+        }
+      }
+      setState(() {
+        _status = 'Car washer accepted your request';
+        if (acceptedLocation != null) {
+          _washerLocation = acceptedLocation;
+        }
+      });
     });
 
     _socket.listenWasherLocation((event) {
@@ -89,15 +104,18 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
           lng: _ownerLocation!.longitude,
           radiusKm: 3,
         );
-        final points = <LatLng>[];
+        final washers = <_NearbyWasher>[];
         for (final it in items) {
           if (it is Map) {
+            final washerId = it['washerId']?.toString();
             final lat = _asDouble(it['lat']);
             final lng = _asDouble(it['lng']);
-            if (lat != null && lng != null) points.add(LatLng(lat, lng));
+            if (washerId != null && washerId.isNotEmpty && lat != null && lng != null) {
+              washers.add(_NearbyWasher(washerId: washerId, lat: lat, lng: lng));
+            }
           }
         }
-        if (mounted) setState(() => _nearbyWasherMarkers = points);
+        if (mounted) setState(() => _nearbyWashers = washers);
       } catch (_) {
         // ignore polling errors
       }
@@ -179,7 +197,7 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
   @override
   Widget build(BuildContext context) {
     final center = _ownerLocation ?? LatLng(9.03, 38.74);
-    final nearbyCount = _nearbyWasherMarkers.length;
+    final nearbyCount = _nearbyWashers.length;
     final markers = <Marker>[
       if (_ownerLocation != null)
         Marker(
@@ -195,9 +213,9 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
             child: const Icon(Icons.person_pin_circle, color: Colors.blue, size: 36),
           ),
         ),
-      for (final p in _nearbyWasherMarkers)
+      for (final w in _nearbyWashers)
         Marker(
-          point: p,
+          point: LatLng(w.lat, w.lng),
           width: 40,
           height: 40,
           builder: (_) => Container(
@@ -317,4 +335,16 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
       ),
     );
   }
+}
+
+class _NearbyWasher {
+  final String washerId;
+  final double lat;
+  final double lng;
+
+  _NearbyWasher({
+    required this.washerId,
+    required this.lat,
+    required this.lng,
+  });
 }

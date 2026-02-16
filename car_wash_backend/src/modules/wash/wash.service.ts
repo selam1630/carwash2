@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -18,6 +19,7 @@ type AuthUser = { id?: string; sub?: string; role: UserRole };
 @Injectable()
 export class WashService {
   private readonly washersGeoKey = 'wash:online:washers';
+  private readonly logger = new Logger(WashService.name);
 
   constructor(
     @InjectRepository(WashRequest)
@@ -26,7 +28,11 @@ export class WashService {
     private readonly usersRepo: Repository<User>,
     @InjectRedis()
     private readonly redis: Redis,
-  ) {}
+  ) {
+    this.redis.on('error', (err) =>
+      this.logger.warn('Redis connection error: ' + err.message),
+    );
+  }
 
   async create(ownerUser: AuthUser, dto: CreateWashRequestDto) {
     await this.ensureOwner(ownerUser);
@@ -86,7 +92,7 @@ export class WashService {
   }
 
   async accept(washerUser: AuthUser, requestId: string) {
-    await this.ensureWasher(washerUser);
+    await this.ensureWasherOrAdmin(washerUser);
     const washerId = this.getUserId(washerUser);
 
     const request = await this.washRepo.findOne({ where: { id: requestId } });
@@ -224,14 +230,23 @@ export class WashService {
   }
 
   private async ensureOwner(user: AuthUser) {
-    if (user.role !== UserRole.OWNER) {
+    const role = String(user.role).toUpperCase();
+    if (role !== UserRole.OWNER) {
       throw new ForbiddenException('Only owners can do this action');
     }
   }
 
   private async ensureWasher(user: AuthUser) {
-    if (user.role !== UserRole.WASHER) {
+    const role = String(user.role).toUpperCase();
+    if (role !== UserRole.WASHER) {
       throw new ForbiddenException('Only washers can do this action');
+    }
+  }
+
+  private async ensureWasherOrAdmin(user: AuthUser) {
+    const role = String(user.role).toUpperCase();
+    if (role !== UserRole.WASHER && role !== UserRole.ADMIN) {
+      throw new ForbiddenException('Only washers/admin can do this action');
     }
   }
 

@@ -20,7 +20,7 @@ class _LoginScreenState extends State<LoginScreen> {
       final role = await client.loginWithPhoneOnly(phone);
       if (role == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No saved session for this phone on this device. Use OTP login once.')),
+          const SnackBar(content: Text('Phone login failed. If this account is not active yet, verify OTP first.')),
         );
         return;
       }

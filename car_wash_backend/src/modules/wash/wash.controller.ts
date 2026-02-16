@@ -48,7 +48,7 @@ export class WashController {
   }
 
   @Post('requests/:id/accept')
-  @Roles(UserRole.WASHER)
+  @Roles(UserRole.WASHER, UserRole.ADMIN)
   async acceptRequest(@Req() req: any, @Param('id') requestId: string) {
     const accepted = await this.washService.accept(req.user, requestId);
     this.washGateway.emitRequestAccepted(accepted);

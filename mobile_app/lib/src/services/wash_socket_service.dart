@@ -3,6 +3,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 
 typedef WasherLocationHandler = void Function(Map<String, dynamic> data);
+typedef WashEventHandler = void Function(Map<String, dynamic> data);
 
 class WashSocketService {
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
@@ -42,6 +43,28 @@ class WashSocketService {
   void listenRequestAccepted(void Function(Map<String, dynamic>) onEvent) {
     _socket?.off('request:accepted');
     _socket?.on('request:accepted', (data) {
+      if (data is Map<String, dynamic>) {
+        onEvent(data);
+      } else if (data is Map) {
+        onEvent(Map<String, dynamic>.from(data));
+      }
+    });
+  }
+
+  void listenRequestCreated(WashEventHandler onEvent) {
+    _socket?.off('request:created');
+    _socket?.on('request:created', (data) {
+      if (data is Map<String, dynamic>) {
+        onEvent(data);
+      } else if (data is Map) {
+        onEvent(Map<String, dynamic>.from(data));
+      }
+    });
+  }
+
+  void listenRequestCompleted(WashEventHandler onEvent) {
+    _socket?.off('request:completed');
+    _socket?.on('request:completed', (data) {
       if (data is Map<String, dynamic>) {
         onEvent(data);
       } else if (data is Map) {
