@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
+import 'dart:async';
 
 import '../api/api_client.dart';
 import '../services/wash_socket_service.dart';
@@ -20,9 +21,11 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
 
   LatLng? _ownerLocation;
   LatLng? _washerLocation;
+  List<LatLng> _nearbyWasherMarkers = [];
   String? _requestId;
   String _status = 'Ready to request a wash';
   bool _loading = false;
+  Timer? _nearbyTimer;
 
   @override
   void initState() {
@@ -33,6 +36,9 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
   Future<void> _bootstrap() async {
     await _resolveLocation();
     await _socket.connect();
+
+    // Start polling nearby washers for map display
+    _startNearbyPolling();
 
     _socket.listenRequestAccepted((event) {
       if (_requestId == null || event['requestId'] != _requestId) return;
@@ -67,6 +73,32 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
     }
   }
 
+  void _startNearbyPolling() {
+    _nearbyTimer?.cancel();
+    if (_ownerLocation == null) return;
+
+    _nearbyTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+      if (_ownerLocation == null) return;
+      try {
+        final items = await _api.getNearbyWashers(
+          lat: _ownerLocation!.latitude,
+          lng: _ownerLocation!.longitude,
+          radiusKm: 3,
+        );
+        final points = <LatLng>[];
+        for (final it in items) {
+          if (it is Map) {
+            final lat = _asDouble(it['lat']);
+            final lng = _asDouble(it['lng']);
+            if (lat != null && lng != null) points.add(LatLng(lat, lng));
+          }
+        }
+        if (mounted) setState(() => _nearbyWasherMarkers = points);
+      } catch (_) {
+        // ignore polling errors
+      }
+    });
+  }
   Future<void> _resolveLocation() async {
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
@@ -86,6 +118,7 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
 
     final pos = await Geolocator.getCurrentPosition();
     setState(() => _ownerLocation = LatLng(pos.latitude, pos.longitude));
+    _startNearbyPolling();
   }
 
   Future<void> _requestWash() async {
@@ -134,6 +167,7 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
 
   @override
   void dispose() {
+    _nearbyTimer?.cancel();
     _socket.dispose();
     super.dispose();
   }
@@ -148,6 +182,13 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
           width: 44,
           height: 44,
           builder: (_) => const Icon(Icons.person_pin_circle, color: Colors.blue, size: 40),
+        ),
+      for (final p in _nearbyWasherMarkers)
+        Marker(
+          point: p,
+          width: 34,
+          height: 34,
+          builder: (_) => const Icon(Icons.pedal_bike, color: Colors.orange, size: 28),
         ),
       if (_washerLocation != null)
         Marker(

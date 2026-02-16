@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -13,6 +14,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../users/entities/user.entity';
 import { CreateWashRequestDto } from './dto/create-wash-request.dto';
 import { UpdateLocationDto } from './dto/update-location.dto';
+import { NearbyWashersQueryDto, WasherPresenceDto } from './dto/washer-presence.dto';
 import { WashGateway } from './wash.gateway';
 import { WashService } from './wash.service';
 
@@ -70,5 +72,20 @@ export class WashController {
     const completed = await this.washService.completeByOwner(req.user, requestId);
     this.washGateway.emitRequestCompleted(completed);
     return completed;
+  }
+
+  // Washer toggles online/offline presence + updates current location for nearby discovery
+  @Post('washers/presence')
+  @Roles(UserRole.WASHER)
+  async presence(@Req() req: any, @Body() dto: WasherPresenceDto) {
+    return this.washService.updateWasherPresence(req.user, dto);
+  }
+
+  // Owner fetches nearby washers for map display (polling)
+  @Get('washers/nearby')
+  @Roles(UserRole.OWNER)
+  async nearby(@Req() req: any, @Query() query: NearbyWashersQueryDto) {
+    const radius = query.radiusKm ?? 3;
+    return this.washService.listNearbyWashers(req.user, Number(query.lat), Number(query.lng), Number(radius));
   }
 }

@@ -19,9 +19,26 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
     final client = ApiClient();
     try {
       final data = await client.verifyOtp(widget.phone, otp);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Verified — welcome ${data['user']?['phone'] ?? ''}')));
-      // Navigate to subscription selection after verification
-      Navigator.pushReplacementNamed(context, '/subscriptions');
+      final role = (data['user']?['role'] ?? '').toString().trim().toUpperCase();
+      final phone = (data['user']?['phone'] ?? widget.phone).toString();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Verified — $phone ($role)')),
+      );
+
+      if (role == 'WASHER') {
+        Navigator.pushReplacementNamed(context, '/washer/requests');
+        return;
+      }
+      if (role == 'OWNER') {
+        Navigator.pushReplacementNamed(context, '/subscriptions');
+        return;
+      }
+
+      // Don't guess: show the role we received so we can fix data/backend if needed.
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Unknown role \"$role\". Staying on this screen.')),
+      );
     } catch (err) {
       String msg = '$err';
       if (err is DioException) {

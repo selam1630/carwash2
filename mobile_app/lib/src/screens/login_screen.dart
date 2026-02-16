@@ -12,6 +12,29 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _phoneController = TextEditingController();
 
+  void _loginPhoneOnly() async {
+    final phone = _phoneController.text.trim();
+    if (phone.isEmpty) return;
+    final client = ApiClient();
+    try {
+      final role = await client.loginWithPhoneOnly(phone);
+      if (role == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No saved session for this phone. Use OTP login.')),
+        );
+        return;
+      }
+      final roleUpper = role.toUpperCase();
+      if (roleUpper == 'WASHER') {
+        Navigator.pushReplacementNamed(context, '/washer/requests');
+      } else {
+        Navigator.pushReplacementNamed(context, '/subscriptions');
+      }
+    } catch (err) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Login failed: $err')));
+    }
+  }
+
   void _sendOtp() async {
     final phone = _phoneController.text.trim();
     if (phone.isEmpty) return;
@@ -69,6 +92,8 @@ class _LoginScreenState extends State<LoginScreen> {
           children: [
             TextField(controller: _phoneController, decoration: const InputDecoration(labelText: 'Phone')),
             const SizedBox(height: 16),
+            ElevatedButton(onPressed: _loginPhoneOnly, child: const Text('Login')),
+            const SizedBox(height: 8),
             ElevatedButton(onPressed: _sendOtp, child: const Text('Send OTP')),
             const SizedBox(height: 8),
             TextButton(

@@ -49,10 +49,19 @@ class ApiClient {
     final data = resp.data as Map<String, dynamic>;
     final access = data['accessToken'] as String?;
     final refresh = data['refreshToken'] as String?;
+    final user = data['user'] as Map<String, dynamic>?;
+    final userPhone = user?['phone']?.toString();
+    final userRole = user?['role']?.toString();
     if (access != null && refresh != null) {
       await storage.write(key: 'access_token', value: access);
       await storage.write(key: 'refresh_token', value: refresh);
       await storage.write(key: 'device_id', value: deviceId);
+      if (userPhone != null && userPhone.isNotEmpty) {
+        await storage.write(key: 'user_phone', value: userPhone);
+      }
+      if (userRole != null && userRole.isNotEmpty) {
+        await storage.write(key: 'user_role', value: userRole);
+      }
     }
     return data;
   }
@@ -76,6 +85,20 @@ class ApiClient {
     await storage.delete(key: 'access_token');
     await storage.delete(key: 'refresh_token');
     await storage.delete(key: 'device_id');
+    await storage.delete(key: 'user_phone');
+    await storage.delete(key: 'user_role');
+  }
+
+  /// For already-verified users on the same phone: refresh session without OTP.
+  /// Requires the stored refresh token + matching phone.
+  Future<String?> loginWithPhoneOnly(String phone) async {
+    final savedPhone = await storage.read(key: 'user_phone');
+    final refreshToken = await storage.read(key: 'refresh_token');
+    if (savedPhone == null || refreshToken == null) return null;
+    if (savedPhone.trim() != phone.trim()) return null;
+
+    await refreshWithDevice(refreshToken);
+    return await storage.read(key: 'user_role');
   }
 
   Future<Response<dynamic>?> _handle401AndRefresh(DioError error) async {
@@ -169,6 +192,28 @@ class ApiClient {
   Future<Map<String, dynamic>> acceptWashRequest(String requestId) async {
     final resp = await dio.post('/wash/requests/$requestId/accept');
     return resp.data as Map<String, dynamic>;
+  }
+
+  Future<List<dynamic>> listOpenWashRequests() async {
+    final resp = await dio.get('/wash/requests/open');
+    return resp.data as List<dynamic>;
+  }
+
+  Future<void> updateWasherPresence({
+    required double lat,
+    required double lng,
+    bool online = true,
+  }) async {
+    await dio.post('/wash/washers/presence', data: {'lat': lat, 'lng': lng, 'online': online});
+  }
+
+  Future<List<dynamic>> getNearbyWashers({
+    required double lat,
+    required double lng,
+    double radiusKm = 3,
+  }) async {
+    final resp = await dio.get('/wash/washers/nearby', queryParameters: {'lat': lat, 'lng': lng, 'radiusKm': radiusKm});
+    return resp.data as List<dynamic>;
   }
 
   Future<void> updateWasherLocation({

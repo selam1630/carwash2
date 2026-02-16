@@ -10,16 +10,22 @@ import { User, UserRole } from '../users/entities/user.entity';
 import { CreateWashRequestDto } from './dto/create-wash-request.dto';
 import { UpdateLocationDto } from './dto/update-location.dto';
 import { WashRequest, WashRequestStatus } from './entities/wash-request.entity';
+import { InjectRedis } from '@nestjs-modules/ioredis';
+import type { Redis } from 'ioredis';
 
 type AuthUser = { id?: string; sub?: string; role: UserRole };
 
 @Injectable()
 export class WashService {
+  private readonly washersGeoKey = 'wash:online:washers';
+
   constructor(
     @InjectRepository(WashRequest)
     private readonly washRepo: Repository<WashRequest>,
     @InjectRepository(User)
     private readonly usersRepo: Repository<User>,
+    @InjectRedis()
+    private readonly redis: Redis,
   ) {}
 
   async create(ownerUser: AuthUser, dto: CreateWashRequestDto) {
@@ -164,6 +170,57 @@ export class WashService {
     }
     const userId = this.getUserId(user);
     return request.ownerId === userId || request.washerId === userId || user.role === UserRole.ADMIN;
+  }
+
+  async updateWasherPresence(washerUser: AuthUser, dto: { lat: number; lng: number; online?: boolean }) {
+    await this.ensureWasher(washerUser);
+    const washerId = this.getUserId(washerUser);
+
+    const online = dto.online ?? true;
+    const metaKey = `wash:washer:${washerId}:presence`;
+
+    if (!online) {
+      await this.redis.zrem(this.washersGeoKey, washerId);
+      await this.redis.del(metaKey);
+      return { ok: true, online: false };
+    }
+
+    // GEOADD key lng lat member
+    await this.redis.geoadd(this.washersGeoKey, dto.lng, dto.lat, washerId);
+    await this.redis.set(
+      metaKey,
+      JSON.stringify({ lat: dto.lat, lng: dto.lng, updatedAt: new Date().toISOString() }),
+      'EX',
+      30,
+    );
+    return { ok: true, online: true };
+  }
+
+  async listNearbyWashers(ownerUser: AuthUser, lat: number, lng: number, radiusKm = 3) {
+    await this.ensureOwner(ownerUser);
+
+    // GEORADIUS key lng lat radius km WITHCOORD
+    const results = (await this.redis.georadius(
+      this.washersGeoKey,
+      lng,
+      lat,
+      radiusKm,
+      'km',
+      'WITHCOORD',
+    )) as Array<[string, [string, string]]>;
+
+    const items: Array<{ washerId: string; lat: number; lng: number }> = [];
+    for (const row of results) {
+      const washerId = row[0];
+      const coords = row[1];
+      if (!coords || coords.length < 2) continue;
+      const wLng = Number(coords[0]);
+      const wLat = Number(coords[1]);
+      if (!Number.isFinite(wLat) || !Number.isFinite(wLng)) continue;
+      items.push({ washerId, lat: wLat, lng: wLng });
+    }
+
+    return items;
   }
 
   private async ensureOwner(user: AuthUser) {
