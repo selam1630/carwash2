@@ -1,5 +1,6 @@
 import {
   Body,
+  BadRequestException,
   Controller,
   Get,
   Param,
@@ -14,7 +15,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../users/entities/user.entity';
 import { CreateWashRequestDto } from './dto/create-wash-request.dto';
 import { UpdateLocationDto } from './dto/update-location.dto';
-import { NearbyWashersQueryDto, WasherPresenceDto } from './dto/washer-presence.dto';
+import { WasherPresenceDto } from './dto/washer-presence.dto';
 import { WashGateway } from './wash.gateway';
 import { WashService } from './wash.service';
 
@@ -84,8 +85,27 @@ export class WashController {
   // Owner fetches nearby washers for map display (polling)
   @Get('washers/nearby')
   @Roles(UserRole.OWNER)
-  async nearby(@Req() req: any, @Query() query: NearbyWashersQueryDto) {
-    const radius = query.radiusKm ?? 3;
-    return this.washService.listNearbyWashers(req.user, Number(query.lat), Number(query.lng), Number(radius));
+  async nearby(
+    @Req() req: any,
+    @Query('lat') latRaw: string,
+    @Query('lng') lngRaw: string,
+    @Query('radiusKm') radiusRaw?: string,
+  ) {
+    const lat = Number(latRaw);
+    const lng = Number(lngRaw);
+    const radiusKm = radiusRaw == null || radiusRaw === '' ? 3 : Number(radiusRaw);
+
+    // Avoid class-validator transform quirks for query strings; validate manually.
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
+      throw new BadRequestException('lat must be a valid latitude (-90..90)');
+    }
+    if (!Number.isFinite(lng) || lng < -180 || lng > 180) {
+      throw new BadRequestException('lng must be a valid longitude (-180..180)');
+    }
+    if (!Number.isFinite(radiusKm) || radiusKm <= 0) {
+      throw new BadRequestException('radiusKm must be a positive number');
+    }
+
+    return this.washService.listNearbyWashers(req.user, lat, lng, radiusKm);
   }
 }

@@ -56,20 +56,24 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
       });
     });
 
-    final active = await _api.getActiveWashRequest();
-    if (active != null && active['id'] != null) {
-      final activeId = active['id'].toString();
-      setState(() {
-        _requestId = activeId;
-        _status = 'You have an active wash request';
-      });
-      _socket.joinRequest(activeId);
+    try {
+      final active = await _api.getActiveWashRequest();
+      if (active != null && active['id'] != null) {
+        final activeId = active['id'].toString();
+        setState(() {
+          _requestId = activeId;
+          _status = 'You have an active wash request';
+        });
+        _socket.joinRequest(activeId);
 
-      final lat = _asDouble(active['washerLat']);
-      final lng = _asDouble(active['washerLng']);
-      if (lat != null && lng != null) {
-        setState(() => _washerLocation = LatLng(lat, lng));
+        final lat = _asDouble(active['washerLat']);
+        final lng = _asDouble(active['washerLng']);
+        if (lat != null && lng != null) {
+          setState(() => _washerLocation = LatLng(lat, lng));
+        }
       }
+    } catch (_) {
+      // Don't crash the map screen if active-request check fails on web.
     }
   }
 
@@ -175,27 +179,49 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
   @override
   Widget build(BuildContext context) {
     final center = _ownerLocation ?? LatLng(9.03, 38.74);
+    final nearbyCount = _nearbyWasherMarkers.length;
     final markers = <Marker>[
       if (_ownerLocation != null)
         Marker(
           point: _ownerLocation!,
           width: 44,
           height: 44,
-          builder: (_) => const Icon(Icons.person_pin_circle, color: Colors.blue, size: 40),
+          builder: (_) => Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.9),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.blue, width: 2),
+            ),
+            child: const Icon(Icons.person_pin_circle, color: Colors.blue, size: 36),
+          ),
         ),
       for (final p in _nearbyWasherMarkers)
         Marker(
           point: p,
-          width: 34,
-          height: 34,
-          builder: (_) => const Icon(Icons.pedal_bike, color: Colors.orange, size: 28),
+          width: 40,
+          height: 40,
+          builder: (_) => Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.9),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.orange, width: 2),
+            ),
+            child: const Icon(Icons.pedal_bike, color: Colors.orange, size: 26),
+          ),
         ),
       if (_washerLocation != null)
         Marker(
           point: _washerLocation!,
           width: 44,
           height: 44,
-          builder: (_) => const Icon(Icons.delivery_dining, color: Colors.green, size: 38),
+          builder: (_) => Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.9),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.green, width: 2),
+            ),
+            child: const Icon(Icons.delivery_dining, color: Colors.green, size: 34),
+          ),
         ),
     ];
 
@@ -204,14 +230,64 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
       body: Column(
         children: [
           Expanded(
-            child: FlutterMap(
-              options: MapOptions(center: center, zoom: 14),
+            child: Stack(
               children: [
-                TileLayer(
-                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  userAgentPackageName: 'com.carwash.mobile',
+                FlutterMap(
+                  options: MapOptions(center: center, zoom: 14),
+                  children: [
+                    TileLayer(
+                      urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      userAgentPackageName: 'com.carwash.mobile',
+                    ),
+                    MarkerLayer(markers: markers),
+                  ],
                 ),
-                MarkerLayer(markers: markers),
+                Positioned(
+                  top: 12,
+                  right: 12,
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.92),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.black12),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Legend', style: TextStyle(fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 6),
+                        const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.person_pin_circle, color: Colors.blue, size: 18),
+                            SizedBox(width: 8),
+                            Text('You'),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.pedal_bike, color: Colors.orange, size: 18),
+                            const SizedBox(width: 8),
+                            Text('Nearby washers ($nearbyCount)'),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.delivery_dining, color: Colors.green, size: 18),
+                            SizedBox(width: 8),
+                            Text('Assigned washer'),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -221,6 +297,8 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(_status),
+                const SizedBox(height: 4),
+                Text('Nearby washers: $nearbyCount'),
                 const SizedBox(height: 10),
                 ElevatedButton(
                   onPressed: _loading ? null : _requestWash,

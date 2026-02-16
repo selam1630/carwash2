@@ -31,7 +31,12 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
         return;
       }
       if (role == 'OWNER') {
-        Navigator.pushReplacementNamed(context, '/subscriptions');
+        // Owners with an active subscription should go straight to the map (no payment screen).
+        final hasSub = await client.hasActiveSubscription();
+        Navigator.pushReplacementNamed(
+          context,
+          hasSub ? '/request-wash' : '/subscriptions',
+        );
         return;
       }
 

@@ -20,15 +20,23 @@ class _LoginScreenState extends State<LoginScreen> {
       final role = await client.loginWithPhoneOnly(phone);
       if (role == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No saved session for this phone. Use OTP login.')),
+          const SnackBar(content: Text('No saved session for this phone on this device. Use OTP login once.')),
         );
         return;
       }
       final roleUpper = role.toUpperCase();
       if (roleUpper == 'WASHER') {
         Navigator.pushReplacementNamed(context, '/washer/requests');
+      } else if (roleUpper == 'OWNER') {
+        final hasSub = await client.hasActiveSubscription();
+        Navigator.pushReplacementNamed(
+          context,
+          hasSub ? '/request-wash' : '/subscriptions',
+        );
       } else {
-        Navigator.pushReplacementNamed(context, '/subscriptions');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Role $roleUpper is not supported in this mobile UI yet.')),
+        );
       }
     } catch (err) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Login failed: $err')));

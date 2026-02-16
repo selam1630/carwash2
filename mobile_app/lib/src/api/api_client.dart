@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -183,10 +184,44 @@ class ApiClient {
     return resp.data as Map<String, dynamic>;
   }
 
+  Map<String, dynamic> _asMap(dynamic data) {
+    if (data is Map<String, dynamic>) return data;
+    if (data is Map) return Map<String, dynamic>.from(data);
+    if (data is String) {
+      final s = data.trim();
+      if (s.isEmpty || s == 'null') return <String, dynamic>{};
+      final decoded = jsonDecode(data);
+      return _asMap(decoded);
+    }
+    throw ArgumentError('Expected a JSON object');
+  }
+
+  List<dynamic> _asList(dynamic data) {
+    if (data is List<dynamic>) return data;
+    if (data is List) return List<dynamic>.from(data);
+    if (data is String) {
+      final s = data.trim();
+      if (s.isEmpty || s == 'null') return <dynamic>[];
+      final decoded = jsonDecode(data);
+      return _asList(decoded);
+    }
+    throw ArgumentError('Expected a JSON array');
+  }
+
   Future<Map<String, dynamic>?> getActiveWashRequest() async {
-    final resp = await dio.get('/wash/requests/active');
-    if (resp.data == null) return null;
-    return resp.data as Map<String, dynamic>;
+    try {
+      final resp = await dio.get('/wash/requests/active');
+      final data = resp.data;
+      if (data == null) return null;
+      if (data is String && (data.trim().isEmpty || data.trim() == 'null')) return null;
+      final map = _asMap(data);
+      if (map.isEmpty) return null;
+      return map;
+    } on DioException catch (e) {
+      // If a non-owner somehow hits this endpoint, don't crash the UI.
+      if (e.response?.statusCode == 403) return null;
+      rethrow;
+    }
   }
 
   Future<Map<String, dynamic>> acceptWashRequest(String requestId) async {
@@ -196,7 +231,7 @@ class ApiClient {
 
   Future<List<dynamic>> listOpenWashRequests() async {
     final resp = await dio.get('/wash/requests/open');
-    return resp.data as List<dynamic>;
+    return _asList(resp.data);
   }
 
   Future<void> updateWasherPresence({
@@ -213,7 +248,22 @@ class ApiClient {
     double radiusKm = 3,
   }) async {
     final resp = await dio.get('/wash/washers/nearby', queryParameters: {'lat': lat, 'lng': lng, 'radiusKm': radiusKm});
-    return resp.data as List<dynamic>;
+    return _asList(resp.data);
+  }
+
+  Future<Map<String, dynamic>?> getMyActiveSubscription() async {
+    final resp = await dio.get('/subscriptions/me');
+    if (resp.data == null) return null;
+    try {
+      return _asMap(resp.data);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<bool> hasActiveSubscription() async {
+    final sub = await getMyActiveSubscription();
+    return sub != null;
   }
 
   Future<void> updateWasherLocation({
