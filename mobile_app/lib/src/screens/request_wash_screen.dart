@@ -36,8 +36,6 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
   Future<void> _bootstrap() async {
     await _resolveLocation();
     await _socket.connect();
-
-    // Start polling nearby washers for map display
     _startNearbyPolling();
 
     _socket.listenRequestAccepted((event) {

@@ -1,7 +1,9 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:latlong2/latlong.dart';
 import 'dart:async';
 
 import '../api/api_client.dart';
@@ -24,6 +26,7 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
   Timer? _presenceTimer;
   String _currentPhone = '';
   String _currentRole = '';
+  LatLng? _washerLocation;
 
   @override
   void initState() {
@@ -99,6 +102,7 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
     });
 
     await _load();
+    await _refreshWasherLocation();
   }
 
   Future<void> _load() async {
@@ -128,6 +132,27 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
       }
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _refreshWasherLocation() async {
+    try {
+      final enabled = await Geolocator.isLocationServiceEnabled();
+      if (!enabled) return;
+
+      var perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
+      if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
+        return;
+      }
+
+      final pos = await Geolocator.getCurrentPosition();
+      if (!mounted) return;
+      setState(() => _washerLocation = LatLng(pos.latitude, pos.longitude));
+    } catch (_) {
+      // Ignore location errors for map preview.
     }
   }
 
@@ -178,11 +203,17 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
       }
 
       final pos = await Geolocator.getCurrentPosition();
+      if (mounted) {
+        setState(() => _washerLocation = LatLng(pos.latitude, pos.longitude));
+      }
       await _api.updateWasherPresence(lat: pos.latitude, lng: pos.longitude, online: true);
       _presenceTimer?.cancel();
       _presenceTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
         try {
           final p = await Geolocator.getCurrentPosition();
+          if (mounted) {
+            setState(() => _washerLocation = LatLng(p.latitude, p.longitude));
+          }
           await _api.updateWasherPresence(lat: p.latitude, lng: p.longitude, online: true);
         } catch (_) {
           // ignore background presence errors
@@ -207,6 +238,20 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final ownerMarkers = <LatLng>[];
+    for (final r in _requests) {
+      if (r is Map) {
+        final latRaw = r['pickupLat'];
+        final lngRaw = r['pickupLng'];
+        final lat = latRaw is num ? latRaw.toDouble() : double.tryParse('$latRaw');
+        final lng = lngRaw is num ? lngRaw.toDouble() : double.tryParse('$lngRaw');
+        if (lat != null && lng != null) {
+          ownerMarkers.add(LatLng(lat, lng));
+        }
+      }
+    }
+    final center = _washerLocation ?? (ownerMarkers.isNotEmpty ? ownerMarkers.first : LatLng(9.03, 38.74));
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Washer Requests'),
@@ -240,6 +285,68 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
                       const SizedBox(height: 4),
                       Text('Phone: ${_currentPhone.isEmpty ? "-" : _currentPhone}'),
                       Text('Role: ${_currentRole.isEmpty ? "-" : _currentRole}'),
+                    ],
+                  ),
+                ),
+                Container(
+                  height: 250,
+                  margin: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: Colors.black12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Stack(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: FlutterMap(
+                          options: MapOptions(center: center, zoom: 14),
+                          children: [
+                            TileLayer(
+                              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                              userAgentPackageName: 'com.carwash.mobile',
+                            ),
+                            MarkerLayer(
+                              markers: [
+                                if (_washerLocation != null)
+                                  Marker(
+                                    point: _washerLocation!,
+                                    width: 42,
+                                    height: 42,
+                                    builder: (_) => const Icon(
+                                      Icons.pedal_bike,
+                                      color: Colors.blue,
+                                      size: 34,
+                                    ),
+                                  ),
+                                for (final p in ownerMarkers)
+                                  Marker(
+                                    point: p,
+                                    width: 42,
+                                    height: 42,
+                                    builder: (_) => const Icon(
+                                      Icons.person_pin_circle,
+                                      color: Colors.red,
+                                      size: 36,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      Positioned(
+                        top: 8,
+                        right: 8,
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.92),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text('Owner markers: ${ownerMarkers.length}'),
+                        ),
+                      ),
                     ],
                   ),
                 ),
