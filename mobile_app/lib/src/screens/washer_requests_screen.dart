@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:latlong2/latlong.dart';
 import 'dart:async';
 
@@ -27,11 +28,14 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
   String _currentPhone = '';
   String _currentRole = '';
   LatLng? _washerLocation;
+  LatLng? _mapCenter;
   StreamSubscription<Position>? _washerPositionSub;
   String? _activeRequestId;
   LatLng? _activeOwnerLocation;
   List<LatLng> _washerTrail = [];
   List<LatLng> _ownerTrail = [];
+  bool _submittingFinish = false;
+  final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
@@ -112,6 +116,9 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
           return true;
         }).toList();
       });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Owner confirmed completion. Job counted for this month.')),
+      );
     });
 
     _socket.listenOwnerLocation((event) {
@@ -132,6 +139,17 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
         _activeOwnerLocation = point;
         _appendTrail(_ownerTrail, point);
       });
+      _followOnMap(point);
+    });
+
+    _socket.listenCompletionRequested((event) {
+      final requestId = event['requestId']?.toString();
+      if (requestId == null || requestId.isEmpty) return;
+      if (_activeRequestId == requestId && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Waiting owner Yes/No confirmation...')),
+        );
+      }
     });
 
     await _load();
@@ -187,6 +205,7 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
         _washerLocation = LatLng(pos.latitude, pos.longitude);
         _appendTrail(_washerTrail, _washerLocation!);
       });
+      _followOnMap(_washerLocation!);
 
       _washerPositionSub?.cancel();
       _washerPositionSub = Geolocator.getPositionStream(
@@ -201,6 +220,7 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
           _washerLocation = next;
           _appendTrail(_washerTrail, next);
         });
+        _followOnMap(next);
 
         final activeId = _activeRequestId;
         if (activeId != null && activeId.isNotEmpty) {
@@ -243,6 +263,7 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
         if (lat != null && lng != null) {
           _activeOwnerLocation = LatLng(lat, lng);
           _appendTrail(_ownerTrail, _activeOwnerLocation!);
+          _followOnMap(_activeOwnerLocation!);
         }
       });
       if (!mounted) return;
@@ -263,6 +284,29 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
       }
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _finishActiveRequestWithPhoto() async {
+    final requestId = _activeRequestId;
+    if (requestId == null || requestId.isEmpty || _submittingFinish) return;
+
+    try {
+      final picked = await _picker.pickImage(source: ImageSource.camera, imageQuality: 80);
+      if (picked == null) return;
+      setState(() => _submittingFinish = true);
+      await _api.finishWashRequestWithPhoto(requestId: requestId, afterPhoto: picked);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Photo submitted. Waiting for owner confirmation.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to submit finish photo: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _submittingFinish = false);
     }
   }
 
@@ -339,6 +383,11 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
     }
   }
 
+  void _followOnMap(LatLng point) {
+    if (!mounted) return;
+    _mapCenter = point;
+  }
+
   @override
   Widget build(BuildContext context) {
     final ownerMarkers = <LatLng>[];
@@ -353,7 +402,8 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
         }
       }
     }
-    final center = _washerLocation ??
+    final center = _mapCenter ??
+        _washerLocation ??
         _activeOwnerLocation ??
         (ownerMarkers.isNotEmpty ? ownerMarkers.first : LatLng(9.03, 38.74));
 
@@ -485,6 +535,62 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
                             _activeRequestId != null
                                 ? 'Live tracking active'
                                 : 'Owner markers: ${ownerMarkers.length}',
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        left: 8,
+                        bottom: 8,
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.92),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.timeline, color: Colors.red, size: 16),
+                                  SizedBox(width: 6),
+                                  Text('Owner path'),
+                                ],
+                              ),
+                              SizedBox(height: 4),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.timeline, color: Colors.blue, size: 16),
+                                  SizedBox(width: 6),
+                                  Text('Biker path'),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 6),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: (_activeRequestId == null || _submittingFinish)
+                              ? null
+                              : _finishActiveRequestWithPhoto,
+                          icon: const Icon(Icons.camera_alt),
+                          label: Text(
+                            _submittingFinish
+                                ? 'Submitting...'
+                                : (_activeRequestId == null
+                                    ? 'Accept a request first'
+                                    : 'Finish Wash (Upload Photo)'),
                           ),
                         ),
                       ),

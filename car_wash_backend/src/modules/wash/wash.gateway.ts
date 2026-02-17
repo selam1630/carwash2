@@ -163,6 +163,22 @@ export class WashGateway implements OnGatewayConnection {
     this.server.to(this.requestRoom(request.id)).emit('request:accepted', payload);
   }
 
+  emitCompletionRequested(request: WashRequest) {
+    const payload = {
+      requestId: request.id,
+      ownerId: request.ownerId,
+      washerId: request.washerId,
+      status: request.status,
+      afterWashPhoto: request.afterWashPhoto,
+      washerSubmittedAt: request.washerSubmittedAt,
+    };
+    this.server.to(this.userRoom(request.ownerId)).emit('request:completion-requested', payload);
+    if (request.washerId) {
+      this.server.to(this.userRoom(request.washerId)).emit('request:completion-requested', payload);
+    }
+    this.server.to(this.requestRoom(request.id)).emit('request:completion-requested', payload);
+  }
+
   emitRequestCompleted(request: WashRequest) {
     const payload = {
       requestId: request.id,
@@ -176,6 +192,25 @@ export class WashGateway implements OnGatewayConnection {
       this.server.to(this.userRoom(request.washerId)).emit('request:completed', payload);
     }
     this.server.to(this.requestRoom(request.id)).emit('request:completed', payload);
+  }
+
+  emitRequestReopened(request: WashRequest) {
+    const payload = {
+      requestId: request.id,
+      ownerId: request.ownerId,
+      washerId: request.washerId,
+      status: request.status,
+    };
+    this.server.to(this.userRoom(request.ownerId)).emit('request:reopened', payload);
+    this.server.to(this.requestRoom(request.id)).emit('request:reopened', payload);
+    this.server.emit('request:created', {
+      requestId: request.id,
+      ownerId: request.ownerId,
+      pickupLat: request.pickupLat,
+      pickupLng: request.pickupLng,
+      status: request.status,
+      createdAt: request.createdAt,
+    });
   }
 
   emitWasherLocation(payload: WasherLocationPayload) {

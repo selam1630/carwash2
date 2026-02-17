@@ -7,8 +7,14 @@ import {
   Post,
   Query,
   Req,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import { extname, join } from 'path';
+import { existsSync, mkdirSync } from 'fs';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -16,6 +22,7 @@ import { UserRole } from '../users/entities/user.entity';
 import { CreateWashRequestDto } from './dto/create-wash-request.dto';
 import { UpdateLocationDto } from './dto/update-location.dto';
 import { WasherPresenceDto } from './dto/washer-presence.dto';
+import { OwnerConfirmCompletionDto } from './dto/owner-confirm-completion.dto';
 import { WashGateway } from './wash.gateway';
 import { WashService } from './wash.service';
 
@@ -67,12 +74,81 @@ export class WashController {
     return { ok: true };
   }
 
+  @Post('requests/:id/finish')
+  @Roles(UserRole.WASHER)
+  @UseInterceptors(
+    FileInterceptor('afterPhoto', {
+      storage: diskStorage({
+        destination: (_req, _file, cb) => {
+          const dir = join(process.cwd(), 'uploads/wash');
+          if (!existsSync(dir)) {
+            mkdirSync(dir, { recursive: true });
+          }
+          cb(null, dir);
+        },
+        filename: (_req, file, cb) => {
+          const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+          cb(null, `after-${unique}${extname(file.originalname)}`);
+        },
+      }),
+    }),
+  )
+  async finishByWasher(
+    @Req() req: any,
+    @Param('id') requestId: string,
+    @UploadedFile() afterPhoto?: Express.Multer.File,
+  ) {
+    if (!afterPhoto?.path) {
+      throw new BadRequestException('afterPhoto is required');
+    }
+    const saved = await this.washService.submitCompletionByWasher(
+      req.user,
+      requestId,
+      afterPhoto.path,
+    );
+    this.washGateway.emitCompletionRequested(saved);
+    return saved;
+  }
+
   @Post('requests/:id/complete')
   @Roles(UserRole.OWNER)
   async completeByOwner(@Req() req: any, @Param('id') requestId: string) {
     const completed = await this.washService.completeByOwner(req.user, requestId);
     this.washGateway.emitRequestCompleted(completed);
     return completed;
+  }
+
+  @Post('requests/:id/owner-confirm')
+  @Roles(UserRole.OWNER)
+  async ownerConfirm(
+    @Req() req: any,
+    @Param('id') requestId: string,
+    @Body() dto: OwnerConfirmCompletionDto,
+  ) {
+    const updated = await this.washService.ownerConfirmCompletion(
+      req.user,
+      requestId,
+      dto.approved,
+    );
+    if (dto.approved) {
+      this.washGateway.emitRequestCompleted(updated);
+    } else {
+      this.washGateway.emitRequestReopened(updated);
+    }
+    return updated;
+  }
+
+  @Get('washers/:washerId/monthly-completed')
+  @Roles(UserRole.ADMIN, UserRole.WASHER)
+  async washerMonthlyCompleted(
+    @Req() req: any,
+    @Param('washerId') washerId: string,
+    @Query('year') yearRaw: string,
+    @Query('month') monthRaw: string,
+  ) {
+    const year = Number(yearRaw);
+    const month = Number(monthRaw);
+    return this.washService.getWasherMonthlyCompletedCount(req.user, washerId, year, month);
   }
 
   // Washer toggles online/offline presence + updates current location for nearby discovery

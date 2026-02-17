@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Between, Repository } from 'typeorm';
 import { User, UserRole } from '../users/entities/user.entity';
 import { CreateWashRequestDto } from './dto/create-wash-request.dto';
 import { UpdateLocationDto } from './dto/update-location.dto';
@@ -86,6 +86,7 @@ export class WashService {
       where: [
         { ownerId, status: WashRequestStatus.REQUESTED },
         { ownerId, status: WashRequestStatus.ACCEPTED },
+        { ownerId, status: WashRequestStatus.PENDING_OWNER_CONFIRMATION },
       ],
       order: { createdAt: 'DESC' },
     });
@@ -129,6 +130,70 @@ export class WashService {
     request.status = WashRequestStatus.COMPLETED;
     request.updatedAt = new Date();
 
+    return this.washRepo.save(request);
+  }
+
+  async submitCompletionByWasher(
+    washerUser: AuthUser,
+    requestId: string,
+    afterWashPhotoPath: string,
+  ) {
+    await this.ensureWasher(washerUser);
+    const washerId = this.getUserId(washerUser);
+
+    const request = await this.washRepo.findOne({ where: { id: requestId } });
+    if (!request) {
+      throw new NotFoundException('Wash request not found');
+    }
+    if (request.washerId !== washerId) {
+      throw new ForbiddenException('You are not assigned to this request');
+    }
+    if (request.status !== WashRequestStatus.ACCEPTED) {
+      throw new BadRequestException('Only accepted requests can be submitted for owner confirmation');
+    }
+
+    request.status = WashRequestStatus.PENDING_OWNER_CONFIRMATION;
+    request.afterWashPhoto = afterWashPhotoPath;
+    request.washerSubmittedAt = new Date();
+    request.updatedAt = new Date();
+    return this.washRepo.save(request);
+  }
+
+  async ownerConfirmCompletion(
+    ownerUser: AuthUser,
+    requestId: string,
+    approved: boolean,
+  ) {
+    await this.ensureOwner(ownerUser);
+    const ownerId = this.getUserId(ownerUser);
+
+    const request = await this.washRepo.findOne({ where: { id: requestId } });
+    if (!request) {
+      throw new NotFoundException('Wash request not found');
+    }
+    if (request.ownerId !== ownerId) {
+      throw new ForbiddenException('You can confirm only your own request');
+    }
+    if (request.status !== WashRequestStatus.PENDING_OWNER_CONFIRMATION) {
+      throw new BadRequestException('Request is not waiting for owner confirmation');
+    }
+
+    if (approved) {
+      request.status = WashRequestStatus.COMPLETED;
+      request.ownerConfirmedAt = new Date();
+      request.updatedAt = new Date();
+      return this.washRepo.save(request);
+    }
+
+    // Owner rejected completion -> reopen request for other nearby washers
+    request.status = WashRequestStatus.REQUESTED;
+    request.washerId = null;
+    request.washer = null;
+    request.washerLat = null;
+    request.washerLng = null;
+    request.washerLocationUpdatedAt = null;
+    request.washerSubmittedAt = null;
+    request.updatedAt = new Date();
     return this.washRepo.save(request);
   }
 
@@ -227,6 +292,40 @@ export class WashService {
     }
 
     return items;
+  }
+
+  async getWasherMonthlyCompletedCount(
+    requester: AuthUser,
+    washerId: string,
+    year: number,
+    month: number,
+  ) {
+    const role = String(requester.role).toUpperCase();
+    const requesterId = this.getUserId(requester);
+    if (role !== UserRole.ADMIN && requesterId !== washerId) {
+      throw new ForbiddenException('Only admin or the same washer can view this count');
+    }
+    if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+      throw new BadRequestException('year/month are required and month must be 1..12');
+    }
+
+    const from = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0));
+    const to = new Date(Date.UTC(year, month, 1, 0, 0, 0));
+
+    const count = await this.washRepo.count({
+      where: {
+        washerId,
+        status: WashRequestStatus.COMPLETED,
+        ownerConfirmedAt: Between(from, to),
+      },
+    });
+
+    return {
+      washerId,
+      year,
+      month,
+      completedCount: count,
+    };
   }
 
   private async ensureOwner(user: AuthUser) {

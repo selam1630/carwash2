@@ -21,6 +21,7 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
 
   LatLng? _ownerLocation;
   LatLng? _washerLocation;
+  LatLng? _mapCenter;
   List<_NearbyWasher> _nearbyWashers = [];
   String? _requestId;
   String _status = 'Ready to request a wash';
@@ -29,6 +30,7 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
   StreamSubscription<Position>? _ownerPositionSub;
   List<LatLng> _ownerTrail = [];
   List<LatLng> _washerTrail = [];
+  bool _completionDialogOpen = false;
 
   @override
   void initState() {
@@ -72,6 +74,43 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
         _appendTrail(_washerTrail, _washerLocation!);
         _status = 'Washer on the way';
       });
+      _followOnMap(_washerLocation!);
+    });
+
+    _socket.listenCompletionRequested((event) {
+      final requestId = event['requestId']?.toString();
+      if (requestId == null || requestId.isEmpty) return;
+      if (_requestId != requestId) return;
+      _showCompletionDialog(requestId);
+    });
+
+    _socket.listenRequestCompleted((event) {
+      final requestId = event['requestId']?.toString();
+      if (requestId == null || requestId.isEmpty) return;
+      if (_requestId != requestId) return;
+      if (!mounted) return;
+      setState(() {
+        _status = 'Wash completed and confirmed';
+        _requestId = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Thanks! Job marked as completed.')),
+      );
+    });
+
+    _socket.listenRequestReopened((event) {
+      final requestId = event['requestId']?.toString();
+      if (requestId == null || requestId.isEmpty) return;
+      if (_requestId != requestId) return;
+      if (!mounted) return;
+      setState(() {
+        _status = 'You marked it as not finished. Reassigning nearest washer...';
+        _washerLocation = null;
+        _washerTrail = [];
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Request reopened and sent to nearby washers.')),
+      );
     });
 
     try {
@@ -91,6 +130,7 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
             _washerLocation = LatLng(lat, lng);
             _appendTrail(_washerTrail, _washerLocation!);
           });
+          _followOnMap(_washerLocation!);
         }
       }
     } catch (_) {
@@ -149,6 +189,7 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
       _ownerLocation = LatLng(pos.latitude, pos.longitude);
       _appendTrail(_ownerTrail, _ownerLocation!);
     });
+    _followOnMap(_ownerLocation!);
     _startNearbyPolling();
   }
 
@@ -166,6 +207,7 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
         _ownerLocation = next;
         _appendTrail(_ownerTrail, next);
       });
+      _followOnMap(next);
 
       final requestId = _requestId;
       if (requestId != null && requestId.isNotEmpty) {
@@ -241,6 +283,62 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
     }
   }
 
+  void _followOnMap(LatLng point) {
+    if (!mounted) return;
+    _mapCenter = point;
+  }
+
+  Future<void> _showCompletionDialog(String requestId) async {
+    if (!mounted || _completionDialogOpen) return;
+    _completionDialogOpen = true;
+    try {
+      final approved = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Wash finished?'),
+          content: const Text('Car washer submitted completion. Is the washing finished?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('No'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Yes'),
+            ),
+          ],
+        ),
+      );
+
+      if (approved == null) return;
+      await _api.ownerConfirmCompletion(requestId: requestId, approved: approved);
+      if (!mounted) return;
+      if (approved) {
+        setState(() {
+          _status = 'Wash completed and confirmed';
+          _requestId = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Confirmed. It is counted for the biker.')),
+        );
+      } else {
+        setState(() {
+          _status = 'Not finished. Request reopened to nearby washers.';
+          _washerLocation = null;
+          _washerTrail = [];
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to submit confirmation: $e')),
+      );
+    } finally {
+      _completionDialogOpen = false;
+    }
+  }
+
   @override
   void dispose() {
     _nearbyTimer?.cancel();
@@ -251,7 +349,7 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final center = _ownerLocation ?? LatLng(9.03, 38.74);
+    final center = _mapCenter ?? _ownerLocation ?? LatLng(9.03, 38.74);
     final nearbyCount = _nearbyWashers.length;
     final markers = <Marker>[
       if (_ownerLocation != null)
@@ -375,6 +473,24 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
                             Icon(Icons.delivery_dining, color: Colors.green, size: 18),
                             SizedBox(width: 8),
                             Text('Assigned washer'),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.timeline, color: Colors.blue, size: 18),
+                            SizedBox(width: 8),
+                            Text('Your path'),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.timeline, color: Colors.green, size: 18),
+                            SizedBox(width: 8),
+                            Text('Washer path'),
                           ],
                         ),
                       ],

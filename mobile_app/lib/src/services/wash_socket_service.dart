@@ -84,6 +84,28 @@ class WashSocketService {
     });
   }
 
+  void listenCompletionRequested(WashEventHandler onEvent) {
+    _socket?.off('request:completion-requested');
+    _socket?.on('request:completion-requested', (data) {
+      if (data is Map<String, dynamic>) {
+        onEvent(data);
+      } else if (data is Map) {
+        onEvent(Map<String, dynamic>.from(data));
+      }
+    });
+  }
+
+  void listenRequestReopened(WashEventHandler onEvent) {
+    _socket?.off('request:reopened');
+    _socket?.on('request:reopened', (data) {
+      if (data is Map<String, dynamic>) {
+        onEvent(data);
+      } else if (data is Map) {
+        onEvent(Map<String, dynamic>.from(data));
+      }
+    });
+  }
+
   void joinRequest(String requestId) {
     _socket?.emit('request:join', {'requestId': requestId});
   }

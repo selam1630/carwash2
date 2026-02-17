@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:image_picker/image_picker.dart';
 import '../services/device_service.dart';
 
 class ApiClient {
@@ -351,5 +352,31 @@ class ApiClient {
         if (speed != null) 'speed': speed,
       },
     );
+  }
+
+  Future<Map<String, dynamic>> finishWashRequestWithPhoto({
+    required String requestId,
+    required XFile afterPhoto,
+  }) async {
+    final bytes = await afterPhoto.readAsBytes();
+    final form = FormData.fromMap({
+      'afterPhoto': MultipartFile.fromBytes(
+        bytes,
+        filename: afterPhoto.name.isNotEmpty ? afterPhoto.name : 'after.jpg',
+      ),
+    });
+    final resp = await dio.post('/wash/requests/$requestId/finish', data: form);
+    return _asMap(resp.data);
+  }
+
+  Future<Map<String, dynamic>> ownerConfirmCompletion({
+    required String requestId,
+    required bool approved,
+  }) async {
+    final resp = await dio.post(
+      '/wash/requests/$requestId/owner-confirm',
+      data: {'approved': approved},
+    );
+    return _asMap(resp.data);
   }
 }
