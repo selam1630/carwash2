@@ -20,7 +20,9 @@ class _LoginScreenState extends State<LoginScreen> {
       final role = await client.loginWithPhoneOnly(phone);
       if (role == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Phone login failed. If this account is not active yet, verify OTP first.')),
+          const SnackBar(
+              content: Text(
+                  'Phone login failed. If this account is not active yet, verify OTP first.')),
         );
         return;
       }
@@ -28,18 +30,23 @@ class _LoginScreenState extends State<LoginScreen> {
       if (roleUpper == 'WASHER') {
         Navigator.pushReplacementNamed(context, '/washer/requests');
       } else if (roleUpper == 'OWNER') {
-        final hasSub = await client.hasActiveSubscription();
+        final subStatus = await client.getMySubscriptionStatus();
+        final hasSub = subStatus['active'] == true;
+        final everSubscribed = subStatus['everSubscribed'] == true;
         Navigator.pushReplacementNamed(
           context,
-          hasSub ? '/request-wash' : '/subscriptions',
+          hasSub || everSubscribed ? '/request-wash' : '/subscriptions',
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Role $roleUpper is not supported in this mobile UI yet.')),
+          SnackBar(
+              content: Text(
+                  'Role $roleUpper is not supported in this mobile UI yet.')),
         );
       }
     } catch (err) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Login failed: $err')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Login failed: $err')));
     }
   }
 
@@ -49,10 +56,15 @@ class _LoginScreenState extends State<LoginScreen> {
     final client = ApiClient();
     try {
       await client.sendOtp(phone);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('OTP sent')));
-      Navigator.push(context, MaterialPageRoute(builder: (_) => OtpVerificationScreen(phone: phone)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('OTP sent')));
+      Navigator.push(
+          context,
+          MaterialPageRoute(
+              builder: (_) => OtpVerificationScreen(phone: phone)));
     } catch (err) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error sending OTP: $err')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Error sending OTP: $err')));
     }
   }
 
@@ -75,17 +87,23 @@ class _LoginScreenState extends State<LoginScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Logout'),
-        content: const Text('Are you sure you want to logout and clear stored tokens?'),
+        content: const Text(
+            'Are you sure you want to logout and clear stored tokens?'),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Logout')),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Logout')),
         ],
       ),
     );
     if (confirm != true) return;
     final client = ApiClient();
     await client.logout();
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Logged out')));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('Logged out')));
   }
 
   @override
@@ -98,9 +116,12 @@ class _LoginScreenState extends State<LoginScreen> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            TextField(controller: _phoneController, decoration: const InputDecoration(labelText: 'Phone')),
+            TextField(
+                controller: _phoneController,
+                decoration: const InputDecoration(labelText: 'Phone')),
             const SizedBox(height: 16),
-            ElevatedButton(onPressed: _loginPhoneOnly, child: const Text('Login')),
+            ElevatedButton(
+                onPressed: _loginPhoneOnly, child: const Text('Login')),
             const SizedBox(height: 8),
             ElevatedButton(onPressed: _sendOtp, child: const Text('Send OTP')),
             const SizedBox(height: 8),
@@ -109,7 +130,9 @@ class _LoginScreenState extends State<LoginScreen> {
               child: const Text('I already have OTP'),
             ),
             const SizedBox(height: 8),
-            TextButton(onPressed: () => Navigator.pushNamed(context, '/register'), child: const Text('Register (owner)'))
+            TextButton(
+                onPressed: () => Navigator.pushNamed(context, '/register'),
+                child: const Text('Register (owner)'))
           ],
         ),
       ),

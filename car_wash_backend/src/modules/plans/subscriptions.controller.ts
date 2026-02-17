@@ -18,6 +18,12 @@ export class SubscriptionsController {
     return this.plansService.getOwnerSubscription(req.user.sub);
   }
 
+  @Get('status')
+  @UseGuards(JwtAuthGuard)
+  status(@Req() req: { user: any }) {
+    return this.plansService.getOwnerSubscriptionStatus(req.user.sub);
+  }
+
   @Delete('cancel')
   @UseGuards(JwtAuthGuard)
   cancel(@Req() req: { user: any }) {

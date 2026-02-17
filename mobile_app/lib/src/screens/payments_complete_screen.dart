@@ -4,7 +4,8 @@ import '../api/api_client.dart';
 class PaymentsCompleteScreen extends StatefulWidget {
   final String txRef;
   final String planId;
-  const PaymentsCompleteScreen({super.key, required this.txRef, required this.planId});
+  const PaymentsCompleteScreen(
+      {super.key, required this.txRef, required this.planId});
 
   @override
   State<PaymentsCompleteScreen> createState() => _PaymentsCompleteScreenState();
@@ -22,14 +23,27 @@ class _PaymentsCompleteScreenState extends State<PaymentsCompleteScreen> {
   }
 
   Future<void> _verify() async {
-    setState(() { _loading = true; _message = 'Verifying payment...'; });
+    setState(() {
+      _loading = true;
+      _message = 'Verifying payment...';
+    });
     try {
       final res = await _client.verifyPayment(widget.txRef, widget.planId);
-      setState(() { _message = res['subscription'] != null ? 'Subscription active' : 'Verification failed'; });
+      final ok = res['subscription'] != null;
+      setState(() {
+        _message = ok ? 'Subscription active' : 'Verification failed';
+      });
+      if (ok && mounted) {
+        Navigator.pushReplacementNamed(context, '/request-wash');
+      }
     } catch (e) {
-      setState(() { _message = 'Verification error: $e'; });
+      setState(() {
+        _message = 'Verification error: $e';
+      });
     } finally {
-      setState(() { _loading = false; });
+      setState(() {
+        _loading = false;
+      });
     }
   }
 
@@ -38,14 +52,19 @@ class _PaymentsCompleteScreenState extends State<PaymentsCompleteScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Payment Status')),
       body: Center(
-        child: _loading ? const CircularProgressIndicator() : Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(_message),
-            const SizedBox(height: 12),
-            ElevatedButton(onPressed: () => Navigator.popUntil(context, (r) => r.isFirst), child: const Text('Done'))
-          ],
-        ),
+        child: _loading
+            ? const CircularProgressIndicator()
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(_message),
+                  const SizedBox(height: 12),
+                  ElevatedButton(
+                      onPressed: () =>
+                          Navigator.popUntil(context, (r) => r.isFirst),
+                      child: const Text('Done'))
+                ],
+              ),
       ),
     );
   }

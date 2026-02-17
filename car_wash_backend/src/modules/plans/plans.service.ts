@@ -51,6 +51,56 @@ export class PlansService {
     return sub ?? null;
   }
 
+  async getOwnerSubscriptionStatus(ownerUserId: string): Promise<{
+    active: boolean;
+    everSubscribed: boolean;
+    isUnlimited: boolean;
+    remainingWashes: number | null;
+  }> {
+    const owner = await this.ownerRepo.findOne({ where: { user: { id: ownerUserId } } });
+    if (!owner) {
+      return {
+        active: false,
+        everSubscribed: false,
+        isUnlimited: false,
+        remainingWashes: null,
+      };
+    }
+
+    const anySubCount = await this.subRepo.count({
+      where: { ownerProfile: { id: owner.id } },
+    });
+    const now = new Date();
+    const activeSub = await this.subRepo.findOne({
+      where: { ownerProfile: { id: owner.id }, expiresAt: MoreThan(now) },
+      relations: ['plan'],
+      order: { createdAt: 'DESC' },
+    });
+
+    if (!activeSub) {
+      return {
+        active: false,
+        everSubscribed: anySubCount > 0,
+        isUnlimited: false,
+        remainingWashes: null,
+      };
+    }
+
+    const washesPerMonth = Number(activeSub.plan?.washesPerMonth ?? 0);
+    const isUnlimited =
+      washesPerMonth <= 0 ||
+      String(activeSub.plan?.name ?? '').toLowerCase().includes('unlimited');
+    const used = Number(activeSub.washesUsed ?? 0);
+    const remaining = isUnlimited ? null : Math.max(washesPerMonth - used, 0);
+
+    return {
+      active: true,
+      everSubscribed: true,
+      isUnlimited,
+      remainingWashes: remaining,
+    };
+  }
+
   async cancelSubscription(ownerUserId: string): Promise<{ message: string }> {
     const owner = await this.ownerRepo.findOne({ where: { user: { id: ownerUserId } } });
     if (!owner) throw new BadRequestException('Owner profile not found');

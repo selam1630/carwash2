@@ -8,6 +8,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, In, MoreThan, Repository } from 'typeorm';
 import { User, UserRole } from '../users/entities/user.entity';
+import { OwnerSubscription } from '../plans/entities/owner-subscription.entity';
 import { CreateWashRequestDto } from './dto/create-wash-request.dto';
 import { UpdateLocationDto } from './dto/update-location.dto';
 import { WashRequest, WashRequestStatus } from './entities/wash-request.entity';
@@ -26,6 +27,8 @@ export class WashService {
     private readonly washRepo: Repository<WashRequest>,
     @InjectRepository(User)
     private readonly usersRepo: Repository<User>,
+    @InjectRepository(OwnerSubscription)
+    private readonly ownerSubRepo: Repository<OwnerSubscription>,
     @InjectRedis()
     private readonly redis: Redis,
   ) {
@@ -37,11 +40,13 @@ export class WashService {
   async create(ownerUser: AuthUser, dto: CreateWashRequestDto) {
     await this.ensureOwner(ownerUser);
     const ownerId = this.getUserId(ownerUser);
+    await this.ensureOwnerHasRemainingWashes(ownerId);
 
     const existing = await this.washRepo.findOne({
       where: [
         { ownerId, status: WashRequestStatus.REQUESTED },
         { ownerId, status: WashRequestStatus.ACCEPTED },
+        { ownerId, status: WashRequestStatus.PENDING_OWNER_CONFIRMATION },
       ],
       order: { createdAt: 'DESC' },
     });
@@ -168,6 +173,7 @@ export class WashService {
       throw new BadRequestException('Only accepted requests can be completed');
     }
 
+    await this.consumeOwnerWash(ownerId);
     request.status = WashRequestStatus.COMPLETED;
     request.updatedAt = new Date();
 
@@ -220,6 +226,7 @@ export class WashService {
     }
 
     if (approved) {
+      await this.consumeOwnerWash(ownerId);
       request.status = WashRequestStatus.COMPLETED;
       request.ownerConfirmedAt = new Date();
       request.updatedAt = new Date();
@@ -539,6 +546,55 @@ export class WashService {
     if (role !== UserRole.OWNER) {
       throw new ForbiddenException('Only owners can do this action');
     }
+  }
+
+  private async getActiveOwnerSubscription(ownerUserId: string) {
+    return this.ownerSubRepo.findOne({
+      where: {
+        ownerProfile: { user: { id: ownerUserId } },
+        expiresAt: MoreThan(new Date()),
+      },
+      relations: ['plan'],
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  private isUnlimitedPlan(sub: OwnerSubscription) {
+    const washesPerMonth = Number(sub.plan?.washesPerMonth ?? 0);
+    if (washesPerMonth <= 0) return true;
+    const name = String(sub.plan?.name ?? '').toLowerCase();
+    return name.includes('unlimited');
+  }
+
+  private async ensureOwnerHasRemainingWashes(ownerUserId: string) {
+    const sub = await this.getActiveOwnerSubscription(ownerUserId);
+    if (!sub) {
+      throw new ForbiddenException('No active package. Please subscribe again.');
+    }
+    if (this.isUnlimitedPlan(sub)) return;
+
+    const washesAllowed = Number(sub.plan.washesPerMonth);
+    const washesUsed = Number(sub.washesUsed ?? 0);
+    if (washesUsed >= washesAllowed) {
+      throw new ForbiddenException('Package finished. Please subscribe again.');
+    }
+  }
+
+  private async consumeOwnerWash(ownerUserId: string) {
+    const sub = await this.getActiveOwnerSubscription(ownerUserId);
+    if (!sub) {
+      throw new ForbiddenException('No active package. Please subscribe again.');
+    }
+    if (this.isUnlimitedPlan(sub)) return;
+
+    const washesAllowed = Number(sub.plan.washesPerMonth);
+    const washesUsed = Number(sub.washesUsed ?? 0);
+    if (washesUsed >= washesAllowed) {
+      throw new ForbiddenException('Package finished. Please subscribe again.');
+    }
+
+    sub.washesUsed = washesUsed + 1;
+    await this.ownerSubRepo.save(sub);
   }
 
   private async ensureWasher(user: AuthUser) {

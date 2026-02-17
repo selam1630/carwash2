@@ -104,12 +104,14 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
       if (_requestId != requestId) return;
       if (!mounted) return;
       setState(() {
-        _status = 'You marked it as not finished. Reassigning nearest washer...';
+        _status =
+            'You marked it as not finished. Reassigning nearest washer...';
         _washerLocation = null;
         _washerTrail = [];
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Request reopened and sent to nearby washers.')),
+        const SnackBar(
+            content: Text('Request reopened and sent to nearby washers.')),
       );
     });
 
@@ -156,8 +158,12 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
             final washerId = it['washerId']?.toString();
             final lat = _asDouble(it['lat']);
             final lng = _asDouble(it['lng']);
-            if (washerId != null && washerId.isNotEmpty && lat != null && lng != null) {
-              washers.add(_NearbyWasher(washerId: washerId, lat: lat, lng: lng));
+            if (washerId != null &&
+                washerId.isNotEmpty &&
+                lat != null &&
+                lng != null) {
+              washers
+                  .add(_NearbyWasher(washerId: washerId, lat: lat, lng: lng));
             }
           }
         }
@@ -167,6 +173,7 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
       }
     });
   }
+
   Future<void> _resolveLocation() async {
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
@@ -180,7 +187,8 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
     }
     if (permission == LocationPermission.denied ||
         permission == LocationPermission.deniedForever) {
-      setState(() => _status = 'Location permission is required to request a wash');
+      setState(
+          () => _status = 'Location permission is required to request a wash');
       return;
     }
 
@@ -251,6 +259,44 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
     } catch (e) {
       String message = e.toString();
       if (e is DioException) {
+        if (e.response?.statusCode == 403) {
+          final data = e.response?.data;
+          String serverMsg = '';
+          if (data is Map && data['message'] != null) {
+            final m = data['message'];
+            serverMsg = m is List ? m.join(', ') : m.toString();
+          }
+          final lower = serverMsg.toLowerCase();
+          if (lower.contains('package') ||
+              lower.contains('subscribe') ||
+              lower.contains('subscription')) {
+            if (!mounted) return;
+            await showDialog<void>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                title: const Text('Subscribe again'),
+                content: const Text(
+                  'Your package is finished or inactive. Please subscribe again to request a wash.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(ctx).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.of(ctx).pop();
+                      Navigator.pushNamed(context, '/subscriptions');
+                    },
+                    child: const Text('View Packages'),
+                  ),
+                ],
+              ),
+            );
+            setState(() => _loading = false);
+            return;
+          }
+        }
         final data = e.response?.data;
         if (data is Map && data['message'] != null) {
           final m = data['message'];
@@ -297,7 +343,8 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
         barrierDismissible: false,
         builder: (ctx) => AlertDialog(
           title: const Text('Wash finished?'),
-          content: const Text('Car washer submitted completion. Is the washing finished?'),
+          content: const Text(
+              'Car washer submitted completion. Is the washing finished?'),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
@@ -312,7 +359,8 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
       );
 
       if (approved == null) return;
-      await _api.ownerConfirmCompletion(requestId: requestId, approved: approved);
+      await _api.ownerConfirmCompletion(
+          requestId: requestId, approved: approved);
       if (!mounted) return;
       if (approved) {
         setState(() {
@@ -320,7 +368,8 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
           _requestId = null;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Confirmed. It is counted for the biker.')),
+          const SnackBar(
+              content: Text('Confirmed. It is counted for the biker.')),
         );
       } else {
         setState(() {
@@ -363,7 +412,8 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
               shape: BoxShape.circle,
               border: Border.all(color: Colors.blue, width: 2),
             ),
-            child: const Icon(Icons.person_pin_circle, color: Colors.blue, size: 36),
+            child: const Icon(Icons.person_pin_circle,
+                color: Colors.blue, size: 36),
           ),
         ),
       for (final w in _nearbyWashers)
@@ -391,7 +441,8 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
               shape: BoxShape.circle,
               border: Border.all(color: Colors.green, width: 2),
             ),
-            child: const Icon(Icons.delivery_dining, color: Colors.green, size: 34),
+            child: const Icon(Icons.delivery_dining,
+                color: Colors.green, size: 34),
           ),
         ),
     ];
@@ -407,7 +458,8 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
                   options: MapOptions(center: center, zoom: 14),
                   children: [
                     TileLayer(
-                      urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      urlTemplate:
+                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                       userAgentPackageName: 'com.carwash.mobile',
                     ),
                     MarkerLayer(markers: markers),
@@ -447,12 +499,14 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Legend', style: TextStyle(fontWeight: FontWeight.w700)),
+                        const Text('Legend',
+                            style: TextStyle(fontWeight: FontWeight.w700)),
                         const SizedBox(height: 6),
                         const Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.person_pin_circle, color: Colors.blue, size: 18),
+                            Icon(Icons.person_pin_circle,
+                                color: Colors.blue, size: 18),
                             SizedBox(width: 8),
                             Text('You'),
                           ],
@@ -461,7 +515,8 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.pedal_bike, color: Colors.orange, size: 18),
+                            const Icon(Icons.pedal_bike,
+                                color: Colors.orange, size: 18),
                             const SizedBox(width: 8),
                             Text('Nearby washers ($nearbyCount)'),
                           ],
@@ -470,7 +525,8 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
                         const Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.delivery_dining, color: Colors.green, size: 18),
+                            Icon(Icons.delivery_dining,
+                                color: Colors.green, size: 18),
                             SizedBox(width: 8),
                             Text('Assigned washer'),
                           ],
@@ -517,7 +573,9 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
                           height: 18,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : Text(_requestId == null ? 'Request Wash' : 'Request Active'),
+                      : Text(_requestId == null
+                          ? 'Request Wash'
+                          : 'Request Active'),
                 ),
               ],
             ),

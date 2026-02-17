@@ -19,7 +19,8 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
     final client = ApiClient();
     try {
       final data = await client.verifyOtp(widget.phone, otp);
-      final role = (data['user']?['role'] ?? '').toString().trim().toUpperCase();
+      final role =
+          (data['user']?['role'] ?? '').toString().trim().toUpperCase();
       final phone = (data['user']?['phone'] ?? widget.phone).toString();
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -31,18 +32,20 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
         return;
       }
       if (role == 'OWNER') {
-        // Owners with an active subscription should go straight to the map (no payment screen).
-        final hasSub = await client.hasActiveSubscription();
+        final subStatus = await client.getMySubscriptionStatus();
+        final hasSub = subStatus['active'] == true;
+        final everSubscribed = subStatus['everSubscribed'] == true;
         Navigator.pushReplacementNamed(
           context,
-          hasSub ? '/request-wash' : '/subscriptions',
+          hasSub || everSubscribed ? '/request-wash' : '/subscriptions',
         );
         return;
       }
 
       // Don't guess: show the role we received so we can fix data/backend if needed.
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Unknown role \"$role\". Staying on this screen.')),
+        SnackBar(
+            content: Text('Unknown role \"$role\". Staying on this screen.')),
       );
     } catch (err) {
       String msg = '$err';
@@ -55,7 +58,8 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
           msg = data.toString();
         }
       }
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('OTP verify failed: $msg')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('OTP verify failed: $msg')));
     }
   }
 
@@ -67,7 +71,9 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            TextField(controller: _otpController, decoration: const InputDecoration(labelText: 'OTP')),
+            TextField(
+                controller: _otpController,
+                decoration: const InputDecoration(labelText: 'OTP')),
             const SizedBox(height: 16),
             ElevatedButton(onPressed: _verifyOtp, child: const Text('Verify'))
           ],

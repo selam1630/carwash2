@@ -5,13 +5,14 @@ import { ConfigService } from '@nestjs/config';
 import { RedisModule } from '@nestjs-modules/ioredis';
 import { WashRequest } from './entities/wash-request.entity';
 import { User } from '../users/entities/user.entity';
+import { OwnerSubscription } from '../plans/entities/owner-subscription.entity';
 import { WashController } from './wash.controller';
 import { WashService } from './wash.service';
 import { WashGateway } from './wash.gateway';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([WashRequest, User]),
+    TypeOrmModule.forFeature([WashRequest, User, OwnerSubscription]),
     RedisModule.forRootAsync({
       useFactory: (config: ConfigService) => ({
         type: 'single',

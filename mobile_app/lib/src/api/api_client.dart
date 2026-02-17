@@ -16,7 +16,9 @@ class ApiClient {
   static String? _userRoleMem;
 
   ApiClient()
-      : dio = Dio(BaseOptions(baseUrl: dotenv.env['FLUTTER_API_BASE_URL'] ?? 'http://localhost:3000')) {
+      : dio = Dio(BaseOptions(
+            baseUrl: dotenv.env['FLUTTER_API_BASE_URL'] ??
+                'http://localhost:3000')) {
     dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
         var token = _accessTokenMem;
@@ -41,8 +43,7 @@ class ApiClient {
           try {
             final retried = await _handle401AndRefresh(e);
             if (retried != null) return handler.resolve(retried);
-          } catch (_) {
-          }
+          } catch (_) {}
         }
         return handler.next(e);
       },
@@ -60,7 +61,8 @@ class ApiClient {
   /// Verify OTP and store tokens (access + refresh) in secure storage
   Future<Map<String, dynamic>> verifyOtp(String phone, String otp) async {
     final deviceId = await _device.getDeviceId();
-    final resp = await dio.post('/auth/verify-otp', data: {'phone': phone, 'otp': otp, 'deviceId': deviceId});
+    final resp = await dio.post('/auth/verify-otp',
+        data: {'phone': phone, 'otp': otp, 'deviceId': deviceId});
     final data = resp.data as Map<String, dynamic>;
     final access = data['accessToken'] as String?;
     final refresh = data['refreshToken'] as String?;
@@ -89,7 +91,8 @@ class ApiClient {
     final deviceId = await _device.getDeviceId();
     // Use a separate Dio instance to avoid interceptor recursion
     final authDio = Dio(BaseOptions(baseUrl: dio.options.baseUrl));
-    final resp = await authDio.post('/auth/refresh', data: {'refreshToken': refreshToken, 'deviceId': deviceId});
+    final resp = await authDio.post('/auth/refresh',
+        data: {'refreshToken': refreshToken, 'deviceId': deviceId});
     final data = resp.data as Map<String, dynamic>;
     final access = data['accessToken'] as String?;
     final refresh = data['refreshToken'] as String?;
@@ -141,7 +144,10 @@ class ApiClient {
       userPhone = user['phone']?.toString();
     }
 
-    if (access != null && access.isNotEmpty && refresh != null && refresh.isNotEmpty) {
+    if (access != null &&
+        access.isNotEmpty &&
+        refresh != null &&
+        refresh.isNotEmpty) {
       _accessTokenMem = access;
       _refreshTokenMem = refresh;
       await storage.write(key: 'access_token', value: access);
@@ -233,13 +239,16 @@ class ApiClient {
   }
 
   /// Verify chapa tx_ref after redirect
-  Future<Map<String, dynamic>> verifyPayment(String txRef, String planId) async {
+  Future<Map<String, dynamic>> verifyPayment(
+      String txRef, String planId) async {
     final cleanTxRef = txRef.trim();
     final cleanPlanId = planId.trim();
     if (cleanTxRef.isEmpty || cleanPlanId.isEmpty) {
-      throw ArgumentError('txRef and planId are required for payment verification');
+      throw ArgumentError(
+          'txRef and planId are required for payment verification');
     }
-    final resp = await dio.get('/payments/verify', queryParameters: {'tx_ref': cleanTxRef, 'planId': cleanPlanId});
+    final resp = await dio.get('/payments/verify',
+        queryParameters: {'tx_ref': cleanTxRef, 'planId': cleanPlanId});
     return resp.data as Map<String, dynamic>;
   }
 
@@ -283,7 +292,8 @@ class ApiClient {
       final resp = await dio.get('/wash/requests/active');
       final data = resp.data;
       if (data == null) return null;
-      if (data is String && (data.trim().isEmpty || data.trim() == 'null')) return null;
+      if (data is String && (data.trim().isEmpty || data.trim() == 'null'))
+        return null;
       final map = _asMap(data);
       if (map.isEmpty) return null;
       return map;
@@ -309,7 +319,8 @@ class ApiClient {
     required double lng,
     bool online = true,
   }) async {
-    await dio.post('/wash/washers/presence', data: {'lat': lat, 'lng': lng, 'online': online});
+    await dio.post('/wash/washers/presence',
+        data: {'lat': lat, 'lng': lng, 'online': online});
   }
 
   Future<List<dynamic>> getNearbyWashers({
@@ -317,7 +328,8 @@ class ApiClient {
     required double lng,
     double radiusKm = 3,
   }) async {
-    final resp = await dio.get('/wash/washers/nearby', queryParameters: {'lat': lat, 'lng': lng, 'radiusKm': radiusKm});
+    final resp = await dio.get('/wash/washers/nearby',
+        queryParameters: {'lat': lat, 'lng': lng, 'radiusKm': radiusKm});
     return _asList(resp.data);
   }
 
@@ -334,6 +346,11 @@ class ApiClient {
   Future<bool> hasActiveSubscription() async {
     final sub = await getMyActiveSubscription();
     return sub != null;
+  }
+
+  Future<Map<String, dynamic>> getMySubscriptionStatus() async {
+    final resp = await dio.get('/subscriptions/status');
+    return _asMap(resp.data);
   }
 
   Future<void> updateWasherLocation({
