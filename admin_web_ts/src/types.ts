@@ -77,3 +77,28 @@ export interface WashersMonthlyCountsResponse {
   totalWashers: number;
   items: WasherMonthlyCountItem[];
 }
+
+export interface OperationsBikerItem {
+  washerId: string;
+  phone: string;
+  fullName: string | null;
+  isActive: boolean;
+}
+
+export interface OperationsDashboardResponse {
+  generatedAt: string;
+  activeWashRequests: Array<{ id: string; ownerId: string; washerId: string | null; status: string; createdAt: string }>;
+  waitingOwnerConfirmations: Array<{ id: string; ownerId: string; washerId: string | null; status: string; washerSubmittedAt: string | null; afterWashPhoto: string | null }>;
+  onlineBikers: OperationsBikerItem[];
+  offlineBikers: OperationsBikerItem[];
+  reopenedJobs: Array<{ id: string; ownerId: string; reopenedCount: number; lastReopenedAt: string | null; status: string }>;
+  failedJobs: Array<{ id: string; ownerId: string; washerId: string | null; status: string; updatedAt: string }>;
+  summary: {
+    activeWashRequests: number;
+    waitingOwnerConfirmations: number;
+    onlineBikers: number;
+    offlineBikers: number;
+    reopenedJobs: number;
+    failedJobs: number;
+  };
+}

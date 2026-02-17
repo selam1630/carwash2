@@ -7,6 +7,7 @@ import type {
   UpdatePlanPayload,
   VerifyOtpResponse,
   WashersMonthlyCountsResponse,
+  OperationsDashboardResponse,
 } from './types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
@@ -114,6 +115,15 @@ export function getWashersMonthlyCounts(
   month: number,
 ): Promise<WashersMonthlyCountsResponse> {
   return request(`/wash/admin/washers/monthly-completed?year=${year}&month=${month}`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+}
+
+export function getOperationsDashboard(token: string): Promise<OperationsDashboardResponse> {
+  return request('/wash/admin/operations-dashboard', {
     method: 'GET',
     headers: {
       Authorization: `Bearer ${token}`,

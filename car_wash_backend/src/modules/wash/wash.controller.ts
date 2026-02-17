@@ -163,6 +163,12 @@ export class WashController {
     return this.washService.getAllWashersMonthlyCompletedCount(req.user, year, month);
   }
 
+  @Get('admin/operations-dashboard')
+  @Roles(UserRole.ADMIN)
+  async adminOperationsDashboard(@Req() req: any) {
+    return this.washService.getAdminOperationsDashboard(req.user);
+  }
+
   // Washer toggles online/offline presence + updates current location for nearby discovery
   @Post('washers/presence')
   @Roles(UserRole.WASHER)

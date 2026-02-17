@@ -36,6 +36,8 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
   List<LatLng> _ownerTrail = [];
   bool _submittingFinish = false;
   final ImagePicker _picker = ImagePicker();
+  static const String _onlinePrefFallbackKey = 'washer_online_preference';
+  String _onlinePrefKey = 'washer_online_preference';
 
   @override
   void initState() {
@@ -52,6 +54,8 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
         _currentRole = role.toUpperCase();
       });
     }
+    _onlinePrefKey =
+        'washer_online_preference_${phone.isNotEmpty ? phone : 'unknown'}';
 
     await _socket.connect();
     _socket.listenRequestCreated((event) {
@@ -154,6 +158,15 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
 
     await _load();
     await _startWasherTracking();
+
+    // Restore previous online state so biker stays online across app restarts.
+    final savedPhoneScoped = await _storage.read(key: _onlinePrefKey);
+    final savedFallback = await _storage.read(key: _onlinePrefFallbackKey);
+    final savedOnline = (savedPhoneScoped == 'true') || (savedFallback == 'true');
+    if (savedOnline) {
+      // Restore without clearing preference on transient startup failures.
+      await _toggleOnline(true, silent: true, fromAutoRestore: true);
+    }
   }
 
   Future<void> _load() async {
@@ -310,7 +323,11 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
     }
   }
 
-  Future<void> _toggleOnline(bool value) async {
+  Future<void> _toggleOnline(
+    bool value, {
+    bool silent = false,
+    bool fromAutoRestore = false,
+  }) async {
     setState(() => _online = value);
     if (!value) {
       _presenceTimer?.cancel();
@@ -318,6 +335,8 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
         // Mark offline using last known location (or 0/0 if unknown)
         await _api.updateWasherPresence(lat: 0, lng: 0, online: false);
       } catch (_) {}
+      await _storage.write(key: _onlinePrefKey, value: 'false');
+      await _storage.write(key: _onlinePrefFallbackKey, value: 'false');
       return;
     }
 
@@ -351,13 +370,24 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
           // ignore background presence errors
         }
       });
-      if (!mounted) return;
+      await _storage.write(key: _onlinePrefKey, value: 'true');
+      await _storage.write(key: _onlinePrefFallbackKey, value: 'true');
+      if (!mounted || silent) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('You are online')));
     } catch (e) {
       if (!mounted) return;
-      setState(() => _online = false);
+      // On app restart restore, keep intended online state instead of flipping to false.
+      if (!fromAutoRestore) {
+        setState(() => _online = false);
+      }
       _presenceTimer?.cancel();
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Go online failed: $e')));
+      if (!fromAutoRestore) {
+        await _storage.write(key: _onlinePrefKey, value: 'false');
+        await _storage.write(key: _onlinePrefFallbackKey, value: 'false');
+      }
+      if (!silent && !fromAutoRestore) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Go online failed: $e')));
+      }
     }
   }
 

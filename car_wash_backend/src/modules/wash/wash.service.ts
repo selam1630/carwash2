@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, Repository } from 'typeorm';
+import { Between, In, MoreThan, Repository } from 'typeorm';
 import { User, UserRole } from '../users/entities/user.entity';
 import { CreateWashRequestDto } from './dto/create-wash-request.dto';
 import { UpdateLocationDto } from './dto/update-location.dto';
@@ -192,7 +192,8 @@ export class WashService {
     request.washerLat = null;
     request.washerLng = null;
     request.washerLocationUpdatedAt = null;
-    request.washerSubmittedAt = null;
+    request.reopenedCount = (request.reopenedCount ?? 0) + 1;
+    request.lastReopenedAt = new Date();
     request.updatedAt = new Date();
     return this.washRepo.save(request);
   }
@@ -258,11 +259,10 @@ export class WashService {
 
     // GEOADD key lng lat member
     await this.redis.geoadd(this.washersGeoKey, dto.lng, dto.lat, washerId);
+    // Keep online state until biker explicitly turns offline.
     await this.redis.set(
       metaKey,
       JSON.stringify({ lat: dto.lat, lng: dto.lng, updatedAt: new Date().toISOString() }),
-      'EX',
-      30,
     );
     return { ok: true, online: true };
   }
@@ -374,6 +374,101 @@ export class WashService {
       month,
       totalWashers: items.length,
       items,
+    };
+  }
+
+  async getAdminOperationsDashboard(requester: AuthUser) {
+    const role = String(requester.role).toUpperCase();
+    if (role !== UserRole.ADMIN) {
+      throw new ForbiddenException('Only admin can view operations dashboard');
+    }
+
+    const activeWashRequests = await this.washRepo.find({
+      where: {
+        status: In([WashRequestStatus.REQUESTED, WashRequestStatus.ACCEPTED]),
+      },
+      order: { createdAt: 'DESC' },
+      take: 100,
+    });
+
+    const waitingOwnerConfirmations = await this.washRepo.find({
+      where: {
+        status: WashRequestStatus.PENDING_OWNER_CONFIRMATION,
+      },
+      order: { washerSubmittedAt: 'DESC' },
+      take: 100,
+    });
+
+    const reopenedJobs = await this.washRepo.find({
+      where: {
+        reopenedCount: MoreThan(0),
+      },
+      order: { lastReopenedAt: 'DESC' },
+      take: 100,
+    });
+
+    const failedJobs = await this.washRepo.find({
+      where: {
+        status: WashRequestStatus.CANCELLED,
+      },
+      order: { updatedAt: 'DESC' },
+      take: 100,
+    });
+
+    const washers = await this.usersRepo.find({
+      where: { role: UserRole.WASHER },
+      relations: ['washerProfile'],
+      order: { createdAt: 'ASC' },
+    });
+
+    const onlineIdsRaw = await this.redis.zrange(this.washersGeoKey, 0, -1);
+    const onlineIds: string[] = [];
+    const onlineSet = new Set<string>();
+
+    for (const washerId of onlineIdsRaw) {
+      const meta = await this.redis.get(`wash:washer:${washerId}:presence`);
+      if (meta) {
+        onlineIds.push(washerId);
+        onlineSet.add(washerId);
+      } else {
+        await this.redis.zrem(this.washersGeoKey, washerId);
+      }
+    }
+
+    const onlineBikers = washers
+      .filter((w) => onlineSet.has(w.id))
+      .map((w) => ({
+        washerId: w.id,
+        phone: w.phone,
+        fullName: (w as any).washerProfile?.fullName ?? null,
+        isActive: w.isActive,
+      }));
+
+    const offlineBikers = washers
+      .filter((w) => !onlineSet.has(w.id))
+      .map((w) => ({
+        washerId: w.id,
+        phone: w.phone,
+        fullName: (w as any).washerProfile?.fullName ?? null,
+        isActive: w.isActive,
+      }));
+
+    return {
+      generatedAt: new Date().toISOString(),
+      activeWashRequests,
+      waitingOwnerConfirmations,
+      onlineBikers,
+      offlineBikers,
+      reopenedJobs,
+      failedJobs,
+      summary: {
+        activeWashRequests: activeWashRequests.length,
+        waitingOwnerConfirmations: waitingOwnerConfirmations.length,
+        onlineBikers: onlineBikers.length,
+        offlineBikers: offlineBikers.length,
+        reopenedJobs: reopenedJobs.length,
+        failedJobs: failedJobs.length,
+      },
     };
   }
 

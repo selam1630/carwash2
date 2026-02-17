@@ -61,6 +61,12 @@ export class WashRequest {
   @Column({ type: 'timestamp', nullable: true })
   ownerConfirmedAt: Date | null;
 
+  @Column({ type: 'int', default: 0 })
+  reopenedCount: number;
+
+  @Column({ type: 'timestamp', nullable: true })
+  lastReopenedAt: Date | null;
+
   @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   createdAt: Date;
 
