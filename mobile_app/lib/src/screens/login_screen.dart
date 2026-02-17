@@ -30,13 +30,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (roleUpper == 'WASHER') {
         Navigator.pushReplacementNamed(context, '/washer/requests');
       } else if (roleUpper == 'OWNER') {
-        final subStatus = await client.getMySubscriptionStatus();
-        final hasSub = subStatus['active'] == true;
-        final everSubscribed = subStatus['everSubscribed'] == true;
-        Navigator.pushReplacementNamed(
-          context,
-          hasSub || everSubscribed ? '/request-wash' : '/subscriptions',
-        );
+        Navigator.pushReplacementNamed(context, '/request-wash');
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

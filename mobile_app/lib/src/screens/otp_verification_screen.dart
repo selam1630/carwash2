@@ -4,7 +4,12 @@ import '../api/api_client.dart';
 
 class OtpVerificationScreen extends StatefulWidget {
   final String phone;
-  const OtpVerificationScreen({super.key, required this.phone});
+  final bool fromRegistration;
+  const OtpVerificationScreen({
+    super.key,
+    required this.phone,
+    this.fromRegistration = false,
+  });
 
   @override
   State<OtpVerificationScreen> createState() => _OtpVerificationScreenState();
@@ -32,12 +37,9 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
         return;
       }
       if (role == 'OWNER') {
-        final subStatus = await client.getMySubscriptionStatus();
-        final hasSub = subStatus['active'] == true;
-        final everSubscribed = subStatus['everSubscribed'] == true;
         Navigator.pushReplacementNamed(
           context,
-          hasSub || everSubscribed ? '/request-wash' : '/subscriptions',
+          widget.fromRegistration ? '/subscriptions' : '/request-wash',
         );
         return;
       }

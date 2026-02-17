@@ -19,20 +19,27 @@ class App extends StatelessWidget {
       routes: {
         '/register': (_) => const RegistrationScreen(),
         '/otp': (ctx) {
-          final args = ModalRoute.of(ctx)!.settings.arguments as Map<String, dynamic>?;
+          final args =
+              ModalRoute.of(ctx)!.settings.arguments as Map<String, dynamic>?;
           final phone = args != null ? args['phone'] as String? : null;
-          return OtpVerificationScreen(phone: phone ?? '');
-        }
-        ,
+          final fromRegistration =
+              args != null ? args['fromRegistration'] == true : false;
+          return OtpVerificationScreen(
+            phone: phone ?? '',
+            fromRegistration: fromRegistration,
+          );
+        },
         '/subscriptions': (_) => const SubscriptionScreen(),
         '/request-wash': (_) => const RequestWashScreen(),
         '/washer/requests': (_) => const WasherRequestsScreen(),
         '/payments/complete': (ctx) {
-          final args = ModalRoute.of(ctx)!.settings.arguments as Map<String, dynamic>?;
+          final args =
+              ModalRoute.of(ctx)!.settings.arguments as Map<String, dynamic>?;
           final txRef = args != null ? args['tx_ref'] as String? : null;
           final planId = args != null ? args['planId'] as String? : null;
           if (txRef == null || planId == null) {
-            return const Scaffold(body: Center(child: Text('Missing payment info')));
+            return const Scaffold(
+                body: Center(child: Text('Missing payment info')));
           }
           return PaymentsCompleteScreen(txRef: txRef, planId: planId);
         },
