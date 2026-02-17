@@ -38,14 +38,14 @@ export class WashController {
   @Roles(UserRole.OWNER)
   async createRequest(@Req() req: any, @Body() dto: CreateWashRequestDto) {
     const created = await this.washService.create(req.user, dto);
-    this.washGateway.emitRequestCreated(created);
+    await this.washGateway.emitRequestCreated(created);
     return created;
   }
 
   @Get('requests/open')
   @Roles(UserRole.WASHER, UserRole.ADMIN)
-  async listOpenRequests() {
-    return this.washService.listOpen();
+  async listOpenRequests(@Req() req: any) {
+    return this.washService.listOpenForUser(req.user);
   }
 
   @Get('requests/active')
@@ -133,7 +133,7 @@ export class WashController {
     if (dto.approved) {
       this.washGateway.emitRequestCompleted(updated);
     } else {
-      this.washGateway.emitRequestReopened(updated);
+      await this.washGateway.emitRequestReopened(updated);
     }
     return updated;
   }

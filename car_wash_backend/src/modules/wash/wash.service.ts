@@ -78,6 +78,47 @@ export class WashService {
     });
   }
 
+  async listOpenForUser(user: AuthUser, radiusKm = 5) {
+    const role = String(user.role).toUpperCase();
+    if (role === UserRole.ADMIN) {
+      return this.listOpen();
+    }
+    if (role !== UserRole.WASHER) {
+      throw new ForbiddenException('Only washers/admin can view open requests');
+    }
+
+    const washerId = this.getUserId(user);
+    const meta = await this.redis.get(`wash:washer:${washerId}:presence`);
+    if (!meta) {
+      // Washer must be online/present to receive nearby jobs.
+      return [];
+    }
+
+    let lat: number | null = null;
+    let lng: number | null = null;
+    try {
+      const parsed = JSON.parse(meta) as { lat?: number; lng?: number };
+      lat = Number(parsed.lat);
+      lng = Number(parsed.lng);
+    } catch (_) {
+      return [];
+    }
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return [];
+    }
+
+    const open = await this.washRepo.find({
+      where: { status: WashRequestStatus.REQUESTED },
+      order: { createdAt: 'ASC' },
+      take: 100,
+    });
+
+    return open.filter((r) => {
+      const d = this.haversineKm(lat as number, lng as number, r.pickupLat, r.pickupLng);
+      return d <= radiusKm;
+    });
+  }
+
   async getActiveForOwner(ownerUser: AuthUser) {
     await this.ensureOwner(ownerUser);
     const ownerId = this.getUserId(ownerUser);
@@ -377,6 +418,27 @@ export class WashService {
     };
   }
 
+  async getNearbyOnlineWasherIds(lat: number, lng: number, radiusKm = 5) {
+    const results = (await this.redis.georadius(
+      this.washersGeoKey,
+      lng,
+      lat,
+      radiusKm,
+      'km',
+    )) as string[];
+
+    const onlineIds: string[] = [];
+    for (const washerId of results) {
+      const meta = await this.redis.get(`wash:washer:${washerId}:presence`);
+      if (meta) {
+        onlineIds.push(washerId);
+      } else {
+        await this.redis.zrem(this.washersGeoKey, washerId);
+      }
+    }
+    return onlineIds;
+  }
+
   async getAdminOperationsDashboard(requester: AuthUser) {
     const role = String(requester.role).toUpperCase();
     if (role !== UserRole.ADMIN) {
@@ -499,5 +561,17 @@ export class WashService {
       throw new ForbiddenException('Invalid authenticated user');
     }
     return id;
+  }
+
+  private haversineKm(lat1: number, lng1: number, lat2: number, lng2: number) {
+    const toRad = (d: number) => (d * Math.PI) / 180;
+    const r = 6371;
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return r * c;
   }
 }

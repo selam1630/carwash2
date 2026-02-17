@@ -138,15 +138,28 @@ export class WashGateway implements OnGatewayConnection {
     this.emitOwnerLocation(payload);
   }
 
-  emitRequestCreated(request: WashRequest) {
-    this.server.emit('request:created', {
+  async emitRequestCreated(request: WashRequest) {
+    const payload = {
       requestId: request.id,
       ownerId: request.ownerId,
       pickupLat: request.pickupLat,
       pickupLng: request.pickupLng,
       status: request.status,
       createdAt: request.createdAt,
-    });
+    };
+
+    const nearbyWasherIds = await this.washService.getNearbyOnlineWasherIds(
+      request.pickupLat,
+      request.pickupLng,
+      5,
+    );
+
+    for (const washerId of nearbyWasherIds) {
+      this.server.to(this.userRoom(washerId)).emit('request:created', payload);
+    }
+
+    // Keep owner informed too.
+    this.server.to(this.userRoom(request.ownerId)).emit('request:created', payload);
   }
 
   emitRequestAccepted(request: WashRequest) {
@@ -194,7 +207,7 @@ export class WashGateway implements OnGatewayConnection {
     this.server.to(this.requestRoom(request.id)).emit('request:completed', payload);
   }
 
-  emitRequestReopened(request: WashRequest) {
+  async emitRequestReopened(request: WashRequest) {
     const payload = {
       requestId: request.id,
       ownerId: request.ownerId,
@@ -203,14 +216,7 @@ export class WashGateway implements OnGatewayConnection {
     };
     this.server.to(this.userRoom(request.ownerId)).emit('request:reopened', payload);
     this.server.to(this.requestRoom(request.id)).emit('request:reopened', payload);
-    this.server.emit('request:created', {
-      requestId: request.id,
-      ownerId: request.ownerId,
-      pickupLat: request.pickupLat,
-      pickupLng: request.pickupLng,
-      status: request.status,
-      createdAt: request.createdAt,
-    });
+    await this.emitRequestCreated(request);
   }
 
   emitWasherLocation(payload: WasherLocationPayload) {
