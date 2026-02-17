@@ -40,6 +40,17 @@ class WashSocketService {
     });
   }
 
+  void listenOwnerLocation(WashEventHandler onEvent) {
+    _socket?.off('owner:location');
+    _socket?.on('owner:location', (data) {
+      if (data is Map<String, dynamic>) {
+        onEvent(data);
+      } else if (data is Map) {
+        onEvent(Map<String, dynamic>.from(data));
+      }
+    });
+  }
+
   void listenRequestAccepted(void Function(Map<String, dynamic>) onEvent) {
     _socket?.off('request:accepted');
     _socket?.on('request:accepted', (data) {
@@ -90,6 +101,18 @@ class WashSocketService {
       'lng': lng,
       if (heading != null) 'heading': heading,
       if (speed != null) 'speed': speed,
+    });
+  }
+
+  void sendOwnerLocation({
+    required String requestId,
+    required double lat,
+    required double lng,
+  }) {
+    _socket?.emit('owner:location', {
+      'requestId': requestId,
+      'lat': lat,
+      'lng': lng,
     });
   }
 

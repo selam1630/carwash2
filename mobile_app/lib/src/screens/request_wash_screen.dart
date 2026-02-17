@@ -26,6 +26,9 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
   String _status = 'Ready to request a wash';
   bool _loading = false;
   Timer? _nearbyTimer;
+  StreamSubscription<Position>? _ownerPositionSub;
+  List<LatLng> _ownerTrail = [];
+  List<LatLng> _washerTrail = [];
 
   @override
   void initState() {
@@ -37,6 +40,7 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
     await _resolveLocation();
     await _socket.connect();
     _startNearbyPolling();
+    _startOwnerLiveTracking();
 
     _socket.listenRequestAccepted((event) {
       if (_requestId == null || event['requestId'] != _requestId) return;
@@ -65,6 +69,7 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
       if (lat == null || lng == null) return;
       setState(() {
         _washerLocation = LatLng(lat, lng);
+        _appendTrail(_washerTrail, _washerLocation!);
         _status = 'Washer on the way';
       });
     });
@@ -82,7 +87,10 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
         final lat = _asDouble(active['washerLat']);
         final lng = _asDouble(active['washerLng']);
         if (lat != null && lng != null) {
-          setState(() => _washerLocation = LatLng(lat, lng));
+          setState(() {
+            _washerLocation = LatLng(lat, lng);
+            _appendTrail(_washerTrail, _washerLocation!);
+          });
         }
       }
     } catch (_) {
@@ -137,8 +145,37 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
     }
 
     final pos = await Geolocator.getCurrentPosition();
-    setState(() => _ownerLocation = LatLng(pos.latitude, pos.longitude));
+    setState(() {
+      _ownerLocation = LatLng(pos.latitude, pos.longitude);
+      _appendTrail(_ownerTrail, _ownerLocation!);
+    });
     _startNearbyPolling();
+  }
+
+  void _startOwnerLiveTracking() {
+    _ownerPositionSub?.cancel();
+    _ownerPositionSub = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.best,
+        distanceFilter: 5,
+      ),
+    ).listen((pos) {
+      final next = LatLng(pos.latitude, pos.longitude);
+      if (!mounted) return;
+      setState(() {
+        _ownerLocation = next;
+        _appendTrail(_ownerTrail, next);
+      });
+
+      final requestId = _requestId;
+      if (requestId != null && requestId.isNotEmpty) {
+        _socket.sendOwnerLocation(
+          requestId: requestId,
+          lat: next.latitude,
+          lng: next.longitude,
+        );
+      }
+    });
   }
 
   Future<void> _requestWash() async {
@@ -160,6 +197,11 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
       }
 
       _socket.joinRequest(createdId);
+      _socket.sendOwnerLocation(
+        requestId: createdId,
+        lat: _ownerLocation!.latitude,
+        lng: _ownerLocation!.longitude,
+      );
       setState(() {
         _requestId = createdId;
         _status = 'Request sent. Looking for the nearest washer...';
@@ -185,9 +227,24 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
     return double.tryParse(value.toString());
   }
 
+  void _appendTrail(List<LatLng> trail, LatLng point) {
+    if (trail.isNotEmpty) {
+      final last = trail.last;
+      if ((last.latitude - point.latitude).abs() < 0.00001 &&
+          (last.longitude - point.longitude).abs() < 0.00001) {
+        return;
+      }
+    }
+    trail.add(point);
+    if (trail.length > 200) {
+      trail.removeRange(0, trail.length - 200);
+    }
+  }
+
   @override
   void dispose() {
     _nearbyTimer?.cancel();
+    _ownerPositionSub?.cancel();
     _socket.dispose();
     super.dispose();
   }
@@ -256,6 +313,26 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
                       userAgentPackageName: 'com.carwash.mobile',
                     ),
                     MarkerLayer(markers: markers),
+                    if (_ownerTrail.length > 1)
+                      PolylineLayer(
+                        polylines: [
+                          Polyline(
+                            points: _ownerTrail,
+                            strokeWidth: 3,
+                            color: Colors.blue.withOpacity(0.8),
+                          ),
+                        ],
+                      ),
+                    if (_washerTrail.length > 1)
+                      PolylineLayer(
+                        polylines: [
+                          Polyline(
+                            points: _washerTrail,
+                            strokeWidth: 3,
+                            color: Colors.green.withOpacity(0.8),
+                          ),
+                        ],
+                      ),
                   ],
                 ),
                 Positioned(

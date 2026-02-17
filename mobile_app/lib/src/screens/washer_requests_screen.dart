@@ -27,6 +27,11 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
   String _currentPhone = '';
   String _currentRole = '';
   LatLng? _washerLocation;
+  StreamSubscription<Position>? _washerPositionSub;
+  String? _activeRequestId;
+  LatLng? _activeOwnerLocation;
+  List<LatLng> _washerTrail = [];
+  List<LatLng> _ownerTrail = [];
 
   @override
   void initState() {
@@ -90,6 +95,14 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
       if (!mounted) return;
       final requestId = event['requestId']?.toString();
       if (requestId == null || requestId.isEmpty) return;
+      if (_activeRequestId == requestId) {
+        setState(() {
+          _activeRequestId = null;
+          _activeOwnerLocation = null;
+          _ownerTrail = [];
+          _washerTrail = [];
+        });
+      }
       setState(() {
         _requests = _requests.where((r) {
           if (r is Map) {
@@ -101,8 +114,28 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
       });
     });
 
+    _socket.listenOwnerLocation((event) {
+      final requestId = event['requestId']?.toString();
+      if (_activeRequestId == null ||
+          requestId == null ||
+          requestId != _activeRequestId) {
+        return;
+      }
+      final latRaw = event['lat'];
+      final lngRaw = event['lng'];
+      final lat = latRaw is num ? latRaw.toDouble() : double.tryParse('$latRaw');
+      final lng = lngRaw is num ? lngRaw.toDouble() : double.tryParse('$lngRaw');
+      if (lat == null || lng == null) return;
+      final point = LatLng(lat, lng);
+      if (!mounted) return;
+      setState(() {
+        _activeOwnerLocation = point;
+        _appendTrail(_ownerTrail, point);
+      });
+    });
+
     await _load();
-    await _refreshWasherLocation();
+    await _startWasherTracking();
   }
 
   Future<void> _load() async {
@@ -135,7 +168,7 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
     }
   }
 
-  Future<void> _refreshWasherLocation() async {
+  Future<void> _startWasherTracking() async {
     try {
       final enabled = await Geolocator.isLocationServiceEnabled();
       if (!enabled) return;
@@ -150,18 +183,70 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
 
       final pos = await Geolocator.getCurrentPosition();
       if (!mounted) return;
-      setState(() => _washerLocation = LatLng(pos.latitude, pos.longitude));
+      setState(() {
+        _washerLocation = LatLng(pos.latitude, pos.longitude);
+        _appendTrail(_washerTrail, _washerLocation!);
+      });
+
+      _washerPositionSub?.cancel();
+      _washerPositionSub = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.best,
+          distanceFilter: 5,
+        ),
+      ).listen((p) async {
+        final next = LatLng(p.latitude, p.longitude);
+        if (!mounted) return;
+        setState(() {
+          _washerLocation = next;
+          _appendTrail(_washerTrail, next);
+        });
+
+        final activeId = _activeRequestId;
+        if (activeId != null && activeId.isNotEmpty) {
+          try {
+            await _api.updateWasherLocation(
+              requestId: activeId,
+              lat: next.latitude,
+              lng: next.longitude,
+              heading: p.heading.isFinite ? p.heading : null,
+              speed: p.speed.isFinite ? p.speed : null,
+            );
+          } catch (_) {
+            // Ignore transient location update errors.
+          }
+        }
+      });
     } catch (_) {
       // Ignore location errors for map preview.
     }
   }
 
-  Future<void> _accept(String requestId) async {
+  Future<void> _accept(Map<String, dynamic> request) async {
+    final requestId = (request['id'] ?? request['requestId'] ?? '').toString();
+    if (requestId.isEmpty) return;
     setState(() => _loading = true);
     try {
       await _api.acceptWashRequest(requestId);
+      _socket.joinRequest(requestId);
+      final latRaw = request['pickupLat'];
+      final lngRaw = request['pickupLng'];
+      final lat = latRaw is num ? latRaw.toDouble() : double.tryParse('$latRaw');
+      final lng = lngRaw is num ? lngRaw.toDouble() : double.tryParse('$lngRaw');
+      setState(() {
+        _activeRequestId = requestId;
+        _ownerTrail = [];
+        _washerTrail = [];
+        if (_washerLocation != null) {
+          _appendTrail(_washerTrail, _washerLocation!);
+        }
+        if (lat != null && lng != null) {
+          _activeOwnerLocation = LatLng(lat, lng);
+          _appendTrail(_ownerTrail, _activeOwnerLocation!);
+        }
+      });
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Accepted request')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Accepted request. Live tracking started.')));
       // For now, just refresh list after accepting.
       await _load();
     } catch (e) {
@@ -204,7 +289,10 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
 
       final pos = await Geolocator.getCurrentPosition();
       if (mounted) {
-        setState(() => _washerLocation = LatLng(pos.latitude, pos.longitude));
+        setState(() {
+          _washerLocation = LatLng(pos.latitude, pos.longitude);
+          _appendTrail(_washerTrail, _washerLocation!);
+        });
       }
       await _api.updateWasherPresence(lat: pos.latitude, lng: pos.longitude, online: true);
       _presenceTimer?.cancel();
@@ -232,8 +320,23 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
   @override
   void dispose() {
     _presenceTimer?.cancel();
+    _washerPositionSub?.cancel();
     _socket.dispose();
     super.dispose();
+  }
+
+  void _appendTrail(List<LatLng> trail, LatLng point) {
+    if (trail.isNotEmpty) {
+      final last = trail.last;
+      if ((last.latitude - point.latitude).abs() < 0.00001 &&
+          (last.longitude - point.longitude).abs() < 0.00001) {
+        return;
+      }
+    }
+    trail.add(point);
+    if (trail.length > 200) {
+      trail.removeRange(0, trail.length - 200);
+    }
   }
 
   @override
@@ -250,7 +353,9 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
         }
       }
     }
-    final center = _washerLocation ?? (ownerMarkers.isNotEmpty ? ownerMarkers.first : LatLng(9.03, 38.74));
+    final center = _washerLocation ??
+        _activeOwnerLocation ??
+        (ownerMarkers.isNotEmpty ? ownerMarkers.first : LatLng(9.03, 38.74));
 
     return Scaffold(
       appBar: AppBar(
@@ -285,6 +390,7 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
                       const SizedBox(height: 4),
                       Text('Phone: ${_currentPhone.isEmpty ? "-" : _currentPhone}'),
                       Text('Role: ${_currentRole.isEmpty ? "-" : _currentRole}'),
+                      Text('Active request: ${_activeRequestId ?? "-"}'),
                     ],
                   ),
                 ),
@@ -319,6 +425,17 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
                                       size: 34,
                                     ),
                                   ),
+                                if (_activeOwnerLocation != null)
+                                  Marker(
+                                    point: _activeOwnerLocation!,
+                                    width: 42,
+                                    height: 42,
+                                    builder: (_) => const Icon(
+                                      Icons.person_pin_circle,
+                                      color: Colors.red,
+                                      size: 36,
+                                    ),
+                                  ),
                                 for (final p in ownerMarkers)
                                   Marker(
                                     point: p,
@@ -332,6 +449,26 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
                                   ),
                               ],
                             ),
+                            if (_ownerTrail.length > 1)
+                              PolylineLayer(
+                                polylines: [
+                                  Polyline(
+                                    points: _ownerTrail,
+                                    strokeWidth: 3,
+                                    color: Colors.red.withOpacity(0.8),
+                                  ),
+                                ],
+                              ),
+                            if (_washerTrail.length > 1)
+                              PolylineLayer(
+                                polylines: [
+                                  Polyline(
+                                    points: _washerTrail,
+                                    strokeWidth: 3,
+                                    color: Colors.blue.withOpacity(0.8),
+                                  ),
+                                ],
+                              ),
                           ],
                         ),
                       ),
@@ -344,7 +481,11 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
                             color: Colors.white.withOpacity(0.92),
                             borderRadius: BorderRadius.circular(8),
                           ),
-                          child: Text('Owner markers: ${ownerMarkers.length}'),
+                          child: Text(
+                            _activeRequestId != null
+                                ? 'Live tracking active'
+                                : 'Owner markers: ${ownerMarkers.length}',
+                          ),
                         ),
                       ),
                     ],
@@ -369,7 +510,7 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
                                 title: Text(ownerPhone.isNotEmpty ? 'Owner: $ownerPhone' : 'Wash Request'),
                                 subtitle: Text('Pickup: $pickupLat, $pickupLng'),
                                 trailing: ElevatedButton(
-                                  onPressed: id.isEmpty ? null : () => _accept(id),
+                                  onPressed: id.isEmpty ? null : () => _accept(r),
                                   child: const Text('Accept'),
                                 ),
                               ),

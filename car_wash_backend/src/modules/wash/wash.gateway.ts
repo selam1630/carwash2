@@ -28,6 +28,14 @@ type WasherLocationPayload = {
   timestamp: string;
 };
 
+type OwnerLocationPayload = {
+  requestId: string;
+  ownerId: string;
+  lat: number;
+  lng: number;
+  timestamp: string;
+};
+
 @WebSocketGateway({
   namespace: '/wash',
   cors: { origin: true, credentials: true },
@@ -102,6 +110,34 @@ export class WashGateway implements OnGatewayConnection {
     }
   }
 
+  @SubscribeMessage('owner:location')
+  async onOwnerLocation(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() body: { requestId: string; lat: number; lng: number },
+  ) {
+    const user = client.data.user as SocketUser | undefined;
+    if (!user || !body?.requestId) return;
+
+    const allowed = await this.washService.canJoinRequestRoom(user, body.requestId);
+    if (!allowed) {
+      client.emit('request:error', { message: 'Not allowed to send owner location for this request' });
+      return;
+    }
+
+    const lat = Number(body.lat);
+    const lng = Number(body.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+    const payload: OwnerLocationPayload = {
+      requestId: body.requestId,
+      ownerId: user.sub,
+      lat,
+      lng,
+      timestamp: new Date().toISOString(),
+    };
+    this.emitOwnerLocation(payload);
+  }
+
   emitRequestCreated(request: WashRequest) {
     this.server.emit('request:created', {
       requestId: request.id,
@@ -149,6 +185,10 @@ export class WashGateway implements OnGatewayConnection {
     this.server
       .to(this.requestRoom(payload.requestId))
       .emit('washer:location', payload);
+  }
+
+  emitOwnerLocation(payload: OwnerLocationPayload) {
+    this.server.to(this.requestRoom(payload.requestId)).emit('owner:location', payload);
   }
 
   private userRoom(userId: string) {
