@@ -151,6 +151,18 @@ export class WashController {
     return this.washService.getWasherMonthlyCompletedCount(req.user, washerId, year, month);
   }
 
+  @Get('admin/washers/monthly-completed')
+  @Roles(UserRole.ADMIN)
+  async allWashersMonthlyCompleted(
+    @Req() req: any,
+    @Query('year') yearRaw: string,
+    @Query('month') monthRaw: string,
+  ) {
+    const year = Number(yearRaw);
+    const month = Number(monthRaw);
+    return this.washService.getAllWashersMonthlyCompletedCount(req.user, year, month);
+  }
+
   // Washer toggles online/offline presence + updates current location for nearby discovery
   @Post('washers/presence')
   @Roles(UserRole.WASHER)

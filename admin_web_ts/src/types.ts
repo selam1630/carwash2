@@ -63,3 +63,17 @@ export interface UpdatePlanPayload {
 export interface ApiErrorBody {
   message?: string | string[];
 }
+
+export interface WasherMonthlyCountItem {
+  washerId: string;
+  phone: string;
+  fullName: string | null;
+  completedCount: number;
+}
+
+export interface WashersMonthlyCountsResponse {
+  year: number;
+  month: number;
+  totalWashers: number;
+  items: WasherMonthlyCountItem[];
+}

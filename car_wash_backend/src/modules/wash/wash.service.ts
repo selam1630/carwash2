@@ -328,6 +328,55 @@ export class WashService {
     };
   }
 
+  async getAllWashersMonthlyCompletedCount(
+    requester: AuthUser,
+    year: number,
+    month: number,
+  ) {
+    const role = String(requester.role).toUpperCase();
+    if (role !== UserRole.ADMIN) {
+      throw new ForbiddenException('Only admin can view all washer monthly counts');
+    }
+    if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+      throw new BadRequestException('year/month are required and month must be 1..12');
+    }
+
+    const from = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0));
+    const to = new Date(Date.UTC(year, month, 1, 0, 0, 0));
+
+    const washers = await this.usersRepo.find({
+      where: { role: UserRole.WASHER },
+      order: { createdAt: 'ASC' },
+      relations: ['washerProfile'],
+    });
+
+    const items = await Promise.all(
+      washers.map(async (w) => {
+        const completedCount = await this.washRepo.count({
+          where: {
+            washerId: w.id,
+            status: WashRequestStatus.COMPLETED,
+            ownerConfirmedAt: Between(from, to),
+          },
+        });
+
+        return {
+          washerId: w.id,
+          phone: w.phone,
+          fullName: (w as any).washerProfile?.fullName ?? null,
+          completedCount,
+        };
+      }),
+    );
+
+    return {
+      year,
+      month,
+      totalWashers: items.length,
+      items,
+    };
+  }
+
   private async ensureOwner(user: AuthUser) {
     const role = String(user.role).toUpperCase();
     if (role !== UserRole.OWNER) {

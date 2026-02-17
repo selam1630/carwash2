@@ -5,12 +5,13 @@ import RegisterSalesTab from './components/RegisterSalesTab';
 import RegisterWasherTab from './components/RegisterWasherTab';
 import PlanManagementTab from './components/PlanManagementTab';
 import VerifyOtpScreen from './components/VerifyOtpScreen';
+import WasherMonthlyCountsTab from './components/WasherMonthlyCountsTab';
 import type { AuthUser } from './types';
 
 const TOKEN_KEY = 'admin_access_token';
 const USER_KEY = 'admin_user';
 
-type Page = 'landing' | 'login' | 'verify' | 'washer' | 'sales' | 'plans';
+type Page = 'landing' | 'login' | 'verify' | 'washer' | 'sales' | 'plans' | 'counts';
 
 function getStoredToken(): string {
   return localStorage.getItem(TOKEN_KEY) || '';
@@ -114,6 +115,9 @@ export default function App() {
               <button type="button" className={page === 'plans' ? 'tab active' : 'tab'} onClick={() => setPage('plans')}>
                 Plan Management
               </button>
+              <button type="button" className={page === 'counts' ? 'tab active' : 'tab'} onClick={() => setPage('counts')}>
+                Biker Monthly Counts
+              </button>
               <button className="secondary" type="button" onClick={logout}>
                 Logout
               </button>
@@ -175,6 +179,12 @@ export default function App() {
         {page === 'plans' ? (
           <section className="card">
             <PlanManagementTab token={token} isAdmin={isAdmin} />
+          </section>
+        ) : null}
+
+        {page === 'counts' ? (
+          <section className="card">
+            <WasherMonthlyCountsTab token={token} isAdmin={isAdmin} />
           </section>
         ) : null}
       </main>

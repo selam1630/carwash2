@@ -6,6 +6,7 @@ import type {
   RegisterWasherPayload,
   UpdatePlanPayload,
   VerifyOtpResponse,
+  WashersMonthlyCountsResponse,
 } from './types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
@@ -101,6 +102,19 @@ export function updatePlan(token: string, id: string, payload: UpdatePlanPayload
 export function deletePlan(token: string, id: string): Promise<{ message?: string }> {
   return request(`/plans/${id}`, {
     method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+}
+
+export function getWashersMonthlyCounts(
+  token: string,
+  year: number,
+  month: number,
+): Promise<WashersMonthlyCountsResponse> {
+  return request(`/wash/admin/washers/monthly-completed?year=${year}&month=${month}`, {
+    method: 'GET',
     headers: {
       Authorization: `Bearer ${token}`,
     },
