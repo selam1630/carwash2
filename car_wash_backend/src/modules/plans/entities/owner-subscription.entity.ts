@@ -28,6 +28,9 @@ export class OwnerSubscription {
   @Column({ type: 'int', default: 0 })
   washesUsed: number;
 
+  @Column({ type: 'int', nullable: true })
+  remainingWashes: number | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

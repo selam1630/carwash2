@@ -575,7 +575,11 @@ export class WashService {
 
     const washesAllowed = Number(sub.plan.washesPerMonth);
     const washesUsed = Number(sub.washesUsed ?? 0);
-    if (washesUsed >= washesAllowed) {
+    const remaining =
+      sub.remainingWashes == null
+        ? washesAllowed - washesUsed
+        : Number(sub.remainingWashes);
+    if (washesUsed >= washesAllowed || remaining <= 0) {
       throw new ForbiddenException('Package finished. Please subscribe again.');
     }
   }
@@ -589,11 +593,16 @@ export class WashService {
 
     const washesAllowed = Number(sub.plan.washesPerMonth);
     const washesUsed = Number(sub.washesUsed ?? 0);
-    if (washesUsed >= washesAllowed) {
+    const currentRemaining =
+      sub.remainingWashes == null
+        ? washesAllowed - washesUsed
+        : Number(sub.remainingWashes);
+    if (washesUsed >= washesAllowed || currentRemaining <= 0) {
       throw new ForbiddenException('Package finished. Please subscribe again.');
     }
 
     sub.washesUsed = washesUsed + 1;
+    sub.remainingWashes = Math.max(currentRemaining - 1, 0);
     await this.ownerSubRepo.save(sub);
   }
 

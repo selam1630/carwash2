@@ -39,6 +39,9 @@ export class PlansService {
       plan,
       expiresAt: expires,
       washesUsed: 0,
+      remainingWashes: this.isUnlimitedPlanByModel(plan)
+        ? null
+        : Number(plan.washesPerMonth),
     });
     return this.subRepo.save(sub);
   }
@@ -87,11 +90,13 @@ export class PlansService {
     }
 
     const washesPerMonth = Number(activeSub.plan?.washesPerMonth ?? 0);
-    const isUnlimited =
-      washesPerMonth <= 0 ||
-      String(activeSub.plan?.name ?? '').toLowerCase().includes('unlimited');
+    const isUnlimited = this.isUnlimitedPlanByModel(activeSub.plan);
     const used = Number(activeSub.washesUsed ?? 0);
-    const remaining = isUnlimited ? null : Math.max(washesPerMonth - used, 0);
+    const remaining = isUnlimited
+      ? null
+      : Number.isFinite(activeSub.remainingWashes)
+        ? Math.max(Number(activeSub.remainingWashes), 0)
+        : Math.max(washesPerMonth - used, 0);
 
     return {
       active: true,
@@ -149,5 +154,11 @@ export class PlansService {
     const plan = await this.findOne(id);
     await this.planRepo.remove(plan);
     return { message: 'Plan deleted' };
+  }
+
+  private isUnlimitedPlanByModel(plan: Plan): boolean {
+    const washesPerMonth = Number(plan.washesPerMonth ?? 0);
+    if (washesPerMonth <= 0) return true;
+    return String(plan.name ?? '').toLowerCase().includes('unlimited');
   }
 }
