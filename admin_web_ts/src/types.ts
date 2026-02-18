@@ -102,3 +102,28 @@ export interface OperationsDashboardResponse {
     failedJobs: number;
   };
 }
+
+export interface SalesMonthlyCommissionItem {
+  salesProfileId: string;
+  salesUserId: string;
+  salesPhone: string | null;
+  salesFullName: string | null;
+  registrationsCount: number;
+  pendingCount: number;
+  paidCount: number;
+  pendingAmount: number;
+  paidAmount: number;
+  totalAmount: number;
+}
+
+export interface SalesMonthlyCommissionsResponse {
+  year: number;
+  month: number;
+  items: SalesMonthlyCommissionItem[];
+  summary: {
+    totalSalesPeople: number;
+    totalRegistrations: number;
+    totalPendingAmount: number;
+    totalPaidAmount: number;
+  };
+}

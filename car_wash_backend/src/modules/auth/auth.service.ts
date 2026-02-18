@@ -525,7 +525,7 @@ export class AuthService {
       throw err;
     }
 
-    const commissionAmount = Number(this.config.get<number>('commission.amountPerOwner') ?? 50);
+    const commissionAmount = 10;
     await this.salesCommissionRepo.save(
       this.salesCommissionRepo.create({
         salesProfile,

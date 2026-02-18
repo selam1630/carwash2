@@ -10,6 +10,7 @@ import {
   UploadedFile,
   UseGuards,
   BadRequestException,
+  Query,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { UpdateOwnerProfileDto } from './dto/update-owner-profile.dto';
@@ -20,9 +21,12 @@ import { diskStorage } from 'multer';
 import { extname } from 'path';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import type { JwtPayload } from '../auth/types/jwt-payload.type';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { UserRole } from './entities/user.entity';
 
 @Controller('users')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class UsersController {
   constructor(private usersService: UsersService) {}
 
@@ -79,5 +83,32 @@ export class UsersController {
   @Get('me/commissions')
   getMyCommissions(@Req() req: { user: JwtPayload }) {
     return this.usersService.getMyCommissions(req.user);
+  }
+
+  @Get('admin/sales/monthly-commissions')
+  @Roles(UserRole.ADMIN)
+  getSalesMonthlyCommissions(
+    @Req() req: { user: JwtPayload },
+    @Query('year') yearRaw: string,
+    @Query('month') monthRaw: string,
+  ) {
+    const year = Number(yearRaw);
+    const month = Number(monthRaw);
+    return this.usersService.getSalesMonthlyCommissions(req.user, year, month);
+  }
+
+  @Post('admin/sales/:salesUserId/approve-monthly-commissions')
+  @Roles(UserRole.ADMIN)
+  approveSalesMonthlyCommissions(
+    @Req() req: { user: JwtPayload },
+    @Param('salesUserId') salesUserId: string,
+    @Body() body: { year: number; month: number },
+  ) {
+    return this.usersService.approveSalesMonthlyCommissions(
+      req.user,
+      salesUserId,
+      Number(body?.year),
+      Number(body?.month),
+    );
   }
 }

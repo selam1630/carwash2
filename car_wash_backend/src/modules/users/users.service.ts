@@ -3,9 +3,10 @@ import {
   NotFoundException,
   BadRequestException,
   UnauthorizedException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Between, Repository } from 'typeorm';
 import { User, UserRole } from './entities/user.entity';
 import { OwnerProfile } from './entities/owner-profile.entity';
 import { WasherProfile } from './entities/washer-profile.entity';
@@ -14,6 +15,7 @@ import { UpdateOwnerProfileDto } from './dto/update-owner-profile.dto';
 import { UpdateSalesProfileDto } from './dto/update-sales-profile.dto';
 import { UpdateWasherProfileDto } from './dto/update-washer-profile.dto';
 import { SalesCommission } from './entities/sales-commission.entity';
+import { CommissionStatus } from './entities/sales-commission.entity';
 
 export interface JwtUserPayload {
   id: string;
@@ -22,6 +24,8 @@ export interface JwtUserPayload {
 
 @Injectable()
 export class UsersService {
+  private static readonly COMMISSION_PER_REGISTRATION = 10;
+
   constructor(
     @InjectRepository(SalesCommission)
     private commissionRepo: Repository<SalesCommission>,
@@ -148,5 +152,143 @@ export class UsersService {
       relations: ['ownerProfile', 'ownerProfile.user'],
       order: { createdAt: 'DESC' },
     });
+  }
+
+  async getSalesMonthlyCommissions(
+    requester: { id: string; role: string },
+    year: number,
+    month: number,
+  ) {
+    if (requester.role !== UserRole.ADMIN) {
+      throw new ForbiddenException('Only admin can view sales monthly commissions');
+    }
+    if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+      throw new BadRequestException('year/month are required and month must be 1..12');
+    }
+
+    const from = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0));
+    const to = new Date(Date.UTC(year, month, 1, 0, 0, 0));
+
+    const commissions = await this.commissionRepo.find({
+      where: { createdAt: Between(from, to) },
+      relations: ['salesProfile', 'salesProfile.user', 'ownerProfile', 'ownerProfile.user'],
+      order: { createdAt: 'DESC' },
+    });
+
+    const grouped = new Map<
+      string,
+      {
+        salesProfileId: string;
+        salesUserId: string;
+        salesPhone: string | null;
+        salesFullName: string | null;
+        registrationsCount: number;
+        pendingCount: number;
+        paidCount: number;
+        pendingAmount: number;
+        paidAmount: number;
+        totalAmount: number;
+      }
+    >();
+
+    for (const c of commissions) {
+      const salesProfileId = c.salesProfile?.id;
+      if (!salesProfileId) continue;
+      const amount = UsersService.COMMISSION_PER_REGISTRATION;
+      const existing = grouped.get(salesProfileId) ?? {
+        salesProfileId,
+        salesUserId: c.salesProfile.user?.id ?? '',
+        salesPhone: c.salesProfile.user?.phone ?? null,
+        salesFullName: c.salesProfile.fullName ?? null,
+        registrationsCount: 0,
+        pendingCount: 0,
+        paidCount: 0,
+        pendingAmount: 0,
+        paidAmount: 0,
+        totalAmount: 0,
+      };
+
+      existing.registrationsCount += 1;
+      existing.totalAmount += amount;
+      if (c.status === CommissionStatus.PAID) {
+        existing.paidCount += 1;
+        existing.paidAmount += amount;
+      } else {
+        existing.pendingCount += 1;
+        existing.pendingAmount += amount;
+      }
+      grouped.set(salesProfileId, existing);
+    }
+
+    const items = Array.from(grouped.values()).sort((a, b) => b.pendingAmount - a.pendingAmount);
+    return {
+      year,
+      month,
+      items,
+      summary: {
+        totalSalesPeople: items.length,
+        totalRegistrations: items.reduce((sum, x) => sum + x.registrationsCount, 0),
+        totalPendingAmount: items.reduce((sum, x) => sum + x.pendingAmount, 0),
+        totalPaidAmount: items.reduce((sum, x) => sum + x.paidAmount, 0),
+      },
+    };
+  }
+
+  async approveSalesMonthlyCommissions(
+    requester: { id: string; role: string },
+    salesUserId: string,
+    year: number,
+    month: number,
+  ) {
+    if (requester.role !== UserRole.ADMIN) {
+      throw new ForbiddenException('Only admin can approve sales commissions');
+    }
+    if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) {
+      throw new BadRequestException('year/month are required and month must be 1..12');
+    }
+
+    const salesProfile = await this.salesRepo.findOne({
+      where: { user: { id: salesUserId } },
+      relations: ['user'],
+    });
+    if (!salesProfile) {
+      throw new NotFoundException('Sales profile not found');
+    }
+
+    const from = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0));
+    const to = new Date(Date.UTC(year, month, 1, 0, 0, 0));
+
+    const pending = await this.commissionRepo.find({
+      where: {
+        salesProfile: { id: salesProfile.id },
+        status: CommissionStatus.PENDING,
+        createdAt: Between(from, to),
+      },
+    });
+
+    if (pending.length === 0) {
+      return {
+        message: 'No pending commissions found for this sales person in selected month',
+        approvedCount: 0,
+        approvedAmount: 0,
+      };
+    }
+
+    let amount = 0;
+    for (const c of pending) {
+      c.status = CommissionStatus.PAID;
+      c.amount = UsersService.COMMISSION_PER_REGISTRATION;
+      amount += UsersService.COMMISSION_PER_REGISTRATION;
+    }
+    await this.commissionRepo.save(pending);
+
+    return {
+      message: 'Monthly commissions approved',
+      approvedCount: pending.length,
+      approvedAmount: amount,
+      salesUserId,
+      year,
+      month,
+    };
   }
 }

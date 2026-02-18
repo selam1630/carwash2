@@ -8,6 +8,7 @@ import type {
   VerifyOtpResponse,
   WashersMonthlyCountsResponse,
   OperationsDashboardResponse,
+  SalesMonthlyCommissionsResponse,
 } from './types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
@@ -128,6 +129,34 @@ export function getOperationsDashboard(token: string): Promise<OperationsDashboa
     headers: {
       Authorization: `Bearer ${token}`,
     },
+  });
+}
+
+export function getSalesMonthlyCommissions(
+  token: string,
+  year: number,
+  month: number,
+): Promise<SalesMonthlyCommissionsResponse> {
+  return request(`/users/admin/sales/monthly-commissions?year=${year}&month=${month}`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+}
+
+export function approveSalesMonthlyCommissions(
+  token: string,
+  salesUserId: string,
+  year: number,
+  month: number,
+): Promise<{ message: string; approvedCount: number; approvedAmount: number }> {
+  return request(`/users/admin/sales/${salesUserId}/approve-monthly-commissions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ year, month }),
   });
 }
 
