@@ -11,6 +11,50 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _phoneController = TextEditingController();
+  bool _restoringSession = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _restoreSession();
+  }
+
+  Future<void> _restoreSession() async {
+    final client = ApiClient();
+    try {
+      final hasToken = await client.hasStoredAccessToken();
+      final role = (await client.getStoredUserRole())?.toUpperCase();
+      if (!mounted) return;
+      if (!hasToken || role == null || role.isEmpty) {
+        setState(() => _restoringSession = false);
+        return;
+      }
+
+      if (role == 'WASHER') {
+        Navigator.pushReplacementNamed(context, '/washer/requests');
+        return;
+      }
+      if (role == 'SALES') {
+        Navigator.pushReplacementNamed(context, '/sales/register-owners');
+        return;
+      }
+      if (role == 'OWNER') {
+        final subStatus = await client.getMySubscriptionStatus();
+        final hasSub = subStatus['active'] == true;
+        final everSubscribed = subStatus['everSubscribed'] == true;
+        Navigator.pushReplacementNamed(
+          context,
+          hasSub || everSubscribed ? '/request-wash' : '/subscriptions',
+        );
+        return;
+      }
+    } catch (_) {
+      // If token is expired or corrupted, stay on login screen.
+    }
+    if (mounted) {
+      setState(() => _restoringSession = false);
+    }
+  }
 
   void _loginPhoneOnly() async {
     final phone = _phoneController.text.trim();
@@ -110,6 +154,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_restoringSession) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
     return Scaffold(
       appBar: AppBar(title: const Text('Login'), actions: [
         IconButton(onPressed: _logout, icon: const Icon(Icons.logout))

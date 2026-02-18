@@ -46,8 +46,17 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
   }
 
   Future<void> _bootstrap() async {
-    final phone = await _storage.read(key: 'user_phone') ?? '';
-    final role = await _storage.read(key: 'user_role') ?? '';
+    String phone = '';
+    String role = '';
+    try {
+      final me = await _api.getCurrentUser();
+      phone = (me['phone'] ?? '').toString();
+      role = (me['role'] ?? '').toString();
+    } catch (_) {
+      // Fallback to locally stored values if /users/me fails transiently.
+      phone = await _api.getStoredUserPhone() ?? '';
+      role = await _api.getStoredUserRole() ?? '';
+    }
     if (mounted) {
       setState(() {
         _currentPhone = phone;

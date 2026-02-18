@@ -15,11 +15,11 @@ const USER_KEY = 'admin_user';
 type Page = 'landing' | 'login' | 'verify' | 'ops' | 'washer' | 'sales' | 'plans' | 'counts';
 
 function getStoredToken(): string {
-  return localStorage.getItem(TOKEN_KEY) || '';
+  return sessionStorage.getItem(TOKEN_KEY) || '';
 }
 
 function getStoredUser(): AuthUser | null {
-  const raw = localStorage.getItem(USER_KEY);
+  const raw = sessionStorage.getItem(USER_KEY);
   if (!raw) return null;
   try {
     return JSON.parse(raw) as AuthUser;
@@ -29,12 +29,12 @@ function getStoredUser(): AuthUser | null {
 }
 
 export default function App() {
-  const [page, setPage] = useState<Page>('landing');
+  const [token, setToken] = useState<string>(getStoredToken);
+  const [user, setUser] = useState<AuthUser | null>(getStoredUser);
+  const [page, setPage] = useState<Page>(() => (getStoredToken() ? 'washer' : 'landing'));
 
   const [phone, setPhone] = useState<string>('');
   const [otp, setOtp] = useState<string>('');
-  const [token, setToken] = useState<string>(getStoredToken);
-  const [user, setUser] = useState<AuthUser | null>(getStoredUser);
   const [authMessage, setAuthMessage] = useState<string>('');
 
   const isAdmin = user?.role === 'ADMIN';
@@ -64,8 +64,8 @@ export default function App() {
     setAuthMessage('');
     try {
       const data = await verifyOtp(phone.trim(), otp.trim(), 'admin-web-ts');
-      localStorage.setItem(TOKEN_KEY, data.accessToken);
-      localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+      sessionStorage.setItem(TOKEN_KEY, data.accessToken);
+      sessionStorage.setItem(USER_KEY, JSON.stringify(data.user));
       setToken(data.accessToken);
       setUser(data.user);
       setAuthMessage('Authenticated successfully.');
@@ -80,17 +80,17 @@ export default function App() {
     const next = value.trim();
     setToken(next);
     if (next) {
-      localStorage.setItem(TOKEN_KEY, next);
+      sessionStorage.setItem(TOKEN_KEY, next);
       if (page === 'landing' || page === 'login' || page === 'verify') setPage('washer');
     } else {
-      localStorage.removeItem(TOKEN_KEY);
+      sessionStorage.removeItem(TOKEN_KEY);
       setPage('landing');
     }
   };
 
   const logout = () => {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
+    sessionStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem(USER_KEY);
     setToken('');
     setUser(null);
     setAuthMessage('Logged out.');

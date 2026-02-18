@@ -6,6 +6,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import '../services/device_service.dart';
+import '../services/session_kv.dart';
 
 class ApiClient {
   final Dio dio;
@@ -23,7 +24,7 @@ class ApiClient {
       onRequest: (options, handler) async {
         var token = _accessTokenMem;
         if (token == null || token.isEmpty) {
-          token = await storage.read(key: 'access_token');
+          token = await _readAuthKey('access_token');
           if (token != null && token.isNotEmpty) {
             _accessTokenMem = token;
           }
@@ -53,6 +54,34 @@ class ApiClient {
   bool _refreshing = false;
   final List<Completer<void>> _refreshWaiters = [];
 
+  Future<String?> _readAuthKey(String key) async {
+    if (isSessionKvAvailable) {
+      return sessionRead(key);
+    }
+    try {
+      return await storage.read(key: key);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _writeAuthKey(String key, String value) async {
+    if (isSessionKvAvailable) {
+      sessionWrite(key, value);
+      return;
+    }
+    await storage.write(key: key, value: value);
+  }
+
+  Future<void> _deleteAuthKey(String key) async {
+    if (isSessionKvAvailable) {
+      sessionDelete(key);
+    }
+    try {
+      await storage.delete(key: key);
+    } catch (_) {}
+  }
+
   Future<void> sendOtp(String phone) async {
     final resp = await dio.post('/auth/send-otp', data: {'phone': phone});
     return resp.data;
@@ -72,16 +101,16 @@ class ApiClient {
     if (access != null && refresh != null) {
       _accessTokenMem = access;
       _refreshTokenMem = refresh;
-      await storage.write(key: 'access_token', value: access);
-      await storage.write(key: 'refresh_token', value: refresh);
-      await storage.write(key: 'device_id', value: deviceId);
+      await _writeAuthKey('access_token', access);
+      await _writeAuthKey('refresh_token', refresh);
+      await _writeAuthKey('device_id', deviceId);
       if (userPhone != null && userPhone.isNotEmpty) {
         _userPhoneMem = userPhone;
-        await storage.write(key: 'user_phone', value: userPhone);
+        await _writeAuthKey('user_phone', userPhone);
       }
       if (userRole != null && userRole.isNotEmpty) {
         _userRoleMem = userRole;
-        await storage.write(key: 'user_role', value: userRole);
+        await _writeAuthKey('user_role', userRole);
       }
     }
     return data;
@@ -99,8 +128,8 @@ class ApiClient {
     if (access != null && refresh != null) {
       _accessTokenMem = access;
       _refreshTokenMem = refresh;
-      await storage.write(key: 'access_token', value: access);
-      await storage.write(key: 'refresh_token', value: refresh);
+      await _writeAuthKey('access_token', access);
+      await _writeAuthKey('refresh_token', refresh);
     }
     return data;
   }
@@ -110,11 +139,44 @@ class ApiClient {
     _refreshTokenMem = null;
     _userPhoneMem = null;
     _userRoleMem = null;
-    await storage.delete(key: 'access_token');
-    await storage.delete(key: 'refresh_token');
-    await storage.delete(key: 'device_id');
-    await storage.delete(key: 'user_phone');
-    await storage.delete(key: 'user_role');
+    await _deleteAuthKey('access_token');
+    await _deleteAuthKey('refresh_token');
+    await _deleteAuthKey('device_id');
+    await _deleteAuthKey('user_phone');
+    await _deleteAuthKey('user_role');
+  }
+
+  Future<String?> getStoredUserRole() async {
+    var role = _userRoleMem;
+    if (role == null || role.isEmpty) {
+      role = await _readAuthKey('user_role');
+      if (role != null && role.isNotEmpty) {
+        _userRoleMem = role;
+      }
+    }
+    return role;
+  }
+
+  Future<String?> getStoredUserPhone() async {
+    var phone = _userPhoneMem;
+    if (phone == null || phone.isEmpty) {
+      phone = await _readAuthKey('user_phone');
+      if (phone != null && phone.isNotEmpty) {
+        _userPhoneMem = phone;
+      }
+    }
+    return phone;
+  }
+
+  Future<bool> hasStoredAccessToken() async {
+    var token = _accessTokenMem;
+    if (token == null || token.isEmpty) {
+      token = await _readAuthKey('access_token');
+      if (token != null && token.isNotEmpty) {
+        _accessTokenMem = token;
+      }
+    }
+    return token != null && token.isNotEmpty;
   }
 
   /// For already-verified users on the same phone: refresh session without OTP.
@@ -150,16 +212,16 @@ class ApiClient {
         refresh.isNotEmpty) {
       _accessTokenMem = access;
       _refreshTokenMem = refresh;
-      await storage.write(key: 'access_token', value: access);
-      await storage.write(key: 'refresh_token', value: refresh);
-      await storage.write(key: 'device_id', value: deviceId);
+      await _writeAuthKey('access_token', access);
+      await _writeAuthKey('refresh_token', refresh);
+      await _writeAuthKey('device_id', deviceId);
       if (userPhone != null && userPhone.isNotEmpty) {
         _userPhoneMem = userPhone;
-        await storage.write(key: 'user_phone', value: userPhone);
+        await _writeAuthKey('user_phone', userPhone);
       }
       if (role != null && role.isNotEmpty) {
         _userRoleMem = role;
-        await storage.write(key: 'user_role', value: role);
+        await _writeAuthKey('user_role', role);
       }
     }
 
@@ -175,7 +237,7 @@ class ApiClient {
       // after refresh, retry the original request if access token exists
       var access = _accessTokenMem;
       if (access == null || access.isEmpty) {
-        access = await storage.read(key: 'access_token');
+        access = await _readAuthKey('access_token');
         if (access != null && access.isNotEmpty) {
           _accessTokenMem = access;
         }
@@ -189,7 +251,7 @@ class ApiClient {
     try {
       var refreshToken = _refreshTokenMem;
       if (refreshToken == null || refreshToken.isEmpty) {
-        refreshToken = await storage.read(key: 'refresh_token');
+        refreshToken = await _readAuthKey('refresh_token');
         if (refreshToken != null && refreshToken.isNotEmpty) {
           _refreshTokenMem = refreshToken;
         }
@@ -406,5 +468,21 @@ class ApiClient {
   Future<List<dynamic>> getMySalesCommissions() async {
     final resp = await dio.get('/users/me/commissions');
     return _asList(resp.data);
+  }
+
+  Future<Map<String, dynamic>> getCurrentUser() async {
+    final resp = await dio.get('/users/me');
+    final data = _asMap(resp.data);
+    final phone = data['phone']?.toString();
+    final role = data['role']?.toString();
+    if (phone != null && phone.isNotEmpty) {
+      _userPhoneMem = phone;
+      await _writeAuthKey('user_phone', phone);
+    }
+    if (role != null && role.isNotEmpty) {
+      _userRoleMem = role;
+      await _writeAuthKey('user_role', role);
+    }
+    return data;
   }
 }
