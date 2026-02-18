@@ -41,9 +41,16 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
         return;
       }
       if (role == 'OWNER') {
+        if (widget.fromRegistration) {
+          Navigator.pushReplacementNamed(context, '/subscriptions');
+          return;
+        }
+        final subStatus = await client.getMySubscriptionStatus();
+        final hasSub = subStatus['active'] == true;
+        final everSubscribed = subStatus['everSubscribed'] == true;
         Navigator.pushReplacementNamed(
           context,
-          widget.fromRegistration ? '/subscriptions' : '/request-wash',
+          hasSub || everSubscribed ? '/request-wash' : '/subscriptions',
         );
         return;
       }

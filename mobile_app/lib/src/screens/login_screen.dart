@@ -30,7 +30,13 @@ class _LoginScreenState extends State<LoginScreen> {
       if (roleUpper == 'WASHER') {
         Navigator.pushReplacementNamed(context, '/washer/requests');
       } else if (roleUpper == 'OWNER') {
-        Navigator.pushReplacementNamed(context, '/request-wash');
+        final subStatus = await client.getMySubscriptionStatus();
+        final hasSub = subStatus['active'] == true;
+        final everSubscribed = subStatus['everSubscribed'] == true;
+        Navigator.pushReplacementNamed(
+          context,
+          hasSub || everSubscribed ? '/request-wash' : '/subscriptions',
+        );
       } else if (roleUpper == 'SALES') {
         Navigator.pushReplacementNamed(context, '/sales/register-owners');
       } else {
