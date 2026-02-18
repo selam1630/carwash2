@@ -31,6 +31,8 @@ class _LoginScreenState extends State<LoginScreen> {
         Navigator.pushReplacementNamed(context, '/washer/requests');
       } else if (roleUpper == 'OWNER') {
         Navigator.pushReplacementNamed(context, '/request-wash');
+      } else if (roleUpper == 'SALES') {
+        Navigator.pushReplacementNamed(context, '/sales/register-owners');
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

@@ -36,6 +36,10 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
         Navigator.pushReplacementNamed(context, '/washer/requests');
         return;
       }
+      if (role == 'SALES') {
+        Navigator.pushReplacementNamed(context, '/sales/register-owners');
+        return;
+      }
       if (role == 'OWNER') {
         Navigator.pushReplacementNamed(
           context,

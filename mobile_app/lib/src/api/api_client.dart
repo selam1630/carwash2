@@ -220,6 +220,12 @@ class ApiClient {
     return resp.data;
   }
 
+  /// Sales-only: register owner on behalf during first-month operation flow.
+  Future<dynamic> registerOwnerBySales(FormData form) async {
+    final resp = await dio.post('/auth/sales/register-owner', data: form);
+    return resp.data;
+  }
+
   /// Get available plans
   Future<List<dynamic>> getPlans() async {
     final resp = await dio.get('/plans');
@@ -395,5 +401,10 @@ class ApiClient {
       data: {'approved': approved},
     );
     return _asMap(resp.data);
+  }
+
+  Future<List<dynamic>> getMySalesCommissions() async {
+    final resp = await dio.get('/users/me/commissions');
+    return _asList(resp.data);
   }
 }

@@ -31,6 +31,9 @@ export class OwnerSubscription {
   @Column({ type: 'int', nullable: true })
   remainingWashes: number | null;
 
+  @Column({ type: 'varchar', nullable: true })
+  ownerPhone: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

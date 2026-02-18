@@ -27,7 +27,10 @@ export class PlansService {
     const plan = await this.planRepo.findOne({ where: { id: planId } });
     if (!plan) throw new NotFoundException('Plan not found');
 
-    const owner = await this.ownerRepo.findOne({ where: { user: { id: ownerUserId } } });
+    const owner = await this.ownerRepo.findOne({
+      where: { user: { id: ownerUserId } },
+      relations: ['user'],
+    });
     if (!owner) throw new BadRequestException('Owner profile not found');
 
     // compute end of current month
@@ -42,6 +45,7 @@ export class PlansService {
       remainingWashes: this.isUnlimitedPlanByModel(plan)
         ? null
         : Number(plan.washesPerMonth),
+      ownerPhone: owner.user?.phone ?? null,
     });
     return this.subRepo.save(sub);
   }
