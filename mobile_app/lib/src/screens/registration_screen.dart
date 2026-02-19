@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../api/api_client.dart';
 import '../widgets/logout_action.dart';
+import '../widgets/theme_mode_action.dart';
 
 class RegistrationScreen extends StatefulWidget {
   const RegistrationScreen({super.key});
@@ -107,7 +108,7 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Register Owner'),
-        actions: const [LogoutAction()],
+        actions: const [ThemeModeAction(), LogoutAction()],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),

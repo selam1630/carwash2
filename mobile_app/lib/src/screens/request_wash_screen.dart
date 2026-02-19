@@ -9,6 +9,7 @@ import '../api/api_client.dart';
 import '../services/wash_socket_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/logout_action.dart';
+import '../widgets/theme_mode_action.dart';
 
 class RequestWashScreen extends StatefulWidget {
   const RequestWashScreen({super.key});
@@ -20,11 +21,16 @@ class RequestWashScreen extends StatefulWidget {
 class _RequestWashScreenState extends State<RequestWashScreen> {
   static const String _voyagerMapUrlTemplate =
       'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+  static const String _voyagerDarkMapUrlTemplate =
+      'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+  static const String _voyagerDarkSoftMapUrlTemplate =
+      'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png';
   static const String _hotMapUrlTemplate =
       'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png';
   static const List<String> _mapSubdomains = ['a', 'b', 'c'];
   final ApiClient _api = ApiClient();
   final WashSocketService _socket = WashSocketService();
+  final MapController _mapController = MapController();
 
   LatLng? _ownerLocation;
   LatLng? _washerLocation;
@@ -197,11 +203,26 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
     if (_didInitialNearbyFocus && !force) return;
     if (_nearbyWashers.isEmpty) return;
 
-    // Focus on bikers only so they appear first and larger on initial view.
-    var minLat = _nearbyWashers.first.lat;
-    var maxLat = _nearbyWashers.first.lat;
-    var minLng = _nearbyWashers.first.lng;
-    var maxLng = _nearbyWashers.first.lng;
+    // Focus nearest biker first so biker symbols appear immediately.
+    var anchor = _nearbyWashers.first;
+    if (_ownerLocation != null) {
+      final owner = _ownerLocation!;
+      var bestScore = double.infinity;
+      for (final w in _nearbyWashers) {
+        final dLat = owner.latitude - w.lat;
+        final dLng = owner.longitude - w.lng;
+        final score = dLat * dLat + dLng * dLng;
+        if (score < bestScore) {
+          bestScore = score;
+          anchor = w;
+        }
+      }
+    }
+
+    var minLat = anchor.lat;
+    var maxLat = anchor.lat;
+    var minLng = anchor.lng;
+    var maxLng = anchor.lng;
 
     for (final w in _nearbyWashers) {
       if (w.lat < minLat) minLat = w.lat;
@@ -210,22 +231,22 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
       if (w.lng > maxLng) maxLng = w.lng;
     }
 
-    final center = LatLng((minLat + maxLat) / 2, (minLng + maxLng) / 2);
+    final center = LatLng(anchor.lat, anchor.lng);
     final latDelta = (maxLat - minLat).abs();
     final lngDelta = (maxLng - minLng).abs();
     final span = latDelta > lngDelta ? latDelta : lngDelta;
 
     double zoom;
     if (_nearbyWashers.length == 1) {
-      zoom = 17.2;
+      zoom = 17.9;
     } else if (span < 0.002) {
-      zoom = 17.0;
+      zoom = 17.4;
     } else if (span < 0.005) {
-      zoom = 16.2;
+      zoom = 16.8;
     } else if (span < 0.012) {
-      zoom = 15.4;
+      zoom = 16.0;
     } else {
-      zoom = 14.6;
+      zoom = 15.0;
     }
 
     if (!mounted) return;
@@ -234,6 +255,7 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
       _mapZoom = zoom;
       _didInitialNearbyFocus = true;
     });
+    _moveMap(center, zoom);
   }
 
   Future<void> _resolveLocation() async {
@@ -398,6 +420,16 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
   void _followOnMap(LatLng point) {
     if (!mounted) return;
     _mapCenter = point;
+    _moveMap(point, _mapZoom);
+  }
+
+  void _moveMap(LatLng center, double zoom) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      try {
+        _mapController.move(center, zoom);
+      } catch (_) {}
+    });
   }
 
   Widget _buildLabeledMarker({
@@ -499,6 +531,12 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final mapUrl = isDark
+        ? (_highContrastMap
+            ? _voyagerDarkMapUrlTemplate
+            : _voyagerDarkSoftMapUrlTemplate)
+        : (_highContrastMap ? _hotMapUrlTemplate : _voyagerMapUrlTemplate);
     final center = _mapCenter ?? _ownerLocation ?? LatLng(9.03, 38.74);
     final nearbyCount = _nearbyWashers.length;
     final markers = <Marker>[
@@ -543,7 +581,7 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Request Wash'),
-        actions: const [LogoutAction()],
+        actions: const [ThemeModeAction(), LogoutAction()],
       ),
       body: Column(
         children: [
@@ -551,6 +589,7 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
             child: Stack(
               children: [
                 FlutterMap(
+                  mapController: _mapController,
                   options: MapOptions(
                     center: center,
                     zoom: _mapZoom,
@@ -559,9 +598,7 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
                   ),
                   children: [
                     TileLayer(
-                      urlTemplate: _highContrastMap
-                          ? _hotMapUrlTemplate
-                          : _voyagerMapUrlTemplate,
+                      urlTemplate: mapUrl,
                       subdomains: _mapSubdomains,
                       retinaMode: true,
                       userAgentPackageName: 'com.carwash.mobile',

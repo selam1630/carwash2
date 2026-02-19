@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../api/api_client.dart';
 import '../widgets/logout_action.dart';
+import '../widgets/theme_mode_action.dart';
 
 class SalesOwnerRegistrationScreen extends StatefulWidget {
   const SalesOwnerRegistrationScreen({super.key});
@@ -164,6 +165,7 @@ class _SalesOwnerRegistrationScreenState
             onPressed: _loadingCommissions ? null : _loadCommissions,
             icon: const Icon(Icons.refresh),
           ),
+          const ThemeModeAction(),
           const LogoutAction(),
         ],
       ),

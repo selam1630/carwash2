@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:dio/dio.dart';
 import '../api/api_client.dart';
 import '../widgets/logout_action.dart';
+import '../widgets/theme_mode_action.dart';
 
 class SubscriptionScreen extends StatefulWidget {
   const SubscriptionScreen({super.key});
@@ -48,12 +49,10 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       if (checkout != null) {
         final uri = Uri.parse(checkout);
         if (kIsWeb) {
-          // open in new tab for web
           await launchUrl(uri, webOnlyWindowName: '_blank');
         } else {
           await launchUrl(uri, mode: LaunchMode.externalApplication);
         }
-        // show verify button to confirm payment after redirect
         showDialog(
             context: context,
             builder: (_) {
@@ -115,7 +114,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Choose a Subscription'),
-        actions: const [LogoutAction()],
+        actions: const [ThemeModeAction(), LogoutAction()],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())

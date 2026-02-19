@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'otp_verification_screen.dart';
 import '../api/api_client.dart';
+import '../widgets/theme_mode_action.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -160,9 +161,13 @@ class _LoginScreenState extends State<LoginScreen> {
       );
     }
     return Scaffold(
-      appBar: AppBar(title: const Text('Login'), actions: [
-        IconButton(onPressed: _logout, icon: const Icon(Icons.logout))
-      ]),
+      appBar: AppBar(
+        title: const Text('Login'),
+        actions: [
+          const ThemeModeAction(),
+          IconButton(onPressed: _logout, icon: const Icon(Icons.logout)),
+        ],
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import '../api/api_client.dart';
 import '../widgets/logout_action.dart';
+import '../widgets/theme_mode_action.dart';
 
 class OtpVerificationScreen extends StatefulWidget {
   final String phone;
@@ -82,7 +83,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text('Verify ${widget.phone}'),
-        actions: const [LogoutAction()],
+        actions: const [ThemeModeAction(), LogoutAction()],
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),

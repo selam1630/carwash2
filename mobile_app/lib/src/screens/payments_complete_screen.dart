@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../api/api_client.dart';
 import '../widgets/logout_action.dart';
+import '../widgets/theme_mode_action.dart';
 
 class PaymentsCompleteScreen extends StatefulWidget {
   final String txRef;
@@ -53,7 +54,7 @@ class _PaymentsCompleteScreenState extends State<PaymentsCompleteScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Payment Status'),
-        actions: const [LogoutAction()],
+        actions: const [ThemeModeAction(), LogoutAction()],
       ),
       body: Center(
         child: _loading

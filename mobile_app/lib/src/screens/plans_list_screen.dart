@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../widgets/logout_action.dart';
+import '../widgets/theme_mode_action.dart';
 
 class PlansListScreen extends StatelessWidget {
   const PlansListScreen({super.key});
@@ -16,7 +17,7 @@ class PlansListScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Plans'),
-        actions: const [LogoutAction()],
+        actions: const [ThemeModeAction(), LogoutAction()],
       ),
       body: ListView.builder(
         itemCount: plans.length,

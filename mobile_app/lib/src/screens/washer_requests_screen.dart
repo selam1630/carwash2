@@ -12,6 +12,7 @@ import '../services/wash_socket_service.dart';
 import '../services/session_kv.dart';
 import '../theme/app_theme.dart';
 import '../widgets/logout_action.dart';
+import '../widgets/theme_mode_action.dart';
 
 class WasherRequestsScreen extends StatefulWidget {
   const WasherRequestsScreen({super.key});
@@ -23,6 +24,10 @@ class WasherRequestsScreen extends StatefulWidget {
 class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
   static const String _voyagerMapUrlTemplate =
       'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+  static const String _voyagerDarkMapUrlTemplate =
+      'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+  static const String _voyagerDarkSoftMapUrlTemplate =
+      'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png';
   static const String _hotMapUrlTemplate =
       'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png';
   static const List<String> _mapSubdomains = ['a', 'b', 'c'];
@@ -487,6 +492,12 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final mapUrl = isDark
+        ? (_highContrastMap
+            ? _voyagerDarkMapUrlTemplate
+            : _voyagerDarkSoftMapUrlTemplate)
+        : (_highContrastMap ? _hotMapUrlTemplate : _voyagerMapUrlTemplate);
     final ownerMarkers = <LatLng>[];
     for (final r in _requests) {
       if (r is Map) {
@@ -515,6 +526,7 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
             ],
           ),
           IconButton(onPressed: _loading ? null : _load, icon: const Icon(Icons.refresh)),
+          const ThemeModeAction(),
           const LogoutAction(),
         ],
       ),
@@ -562,9 +574,7 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
                           ),
                           children: [
                             TileLayer(
-                              urlTemplate: _highContrastMap
-                                  ? _hotMapUrlTemplate
-                                  : _voyagerMapUrlTemplate,
+                              urlTemplate: mapUrl,
                               subdomains: _mapSubdomains,
                               retinaMode: true,
                               userAgentPackageName: 'com.carwash.mobile',
