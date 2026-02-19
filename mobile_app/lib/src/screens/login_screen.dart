@@ -167,23 +167,47 @@ class _LoginScreenState extends State<LoginScreen> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            TextField(
-                controller: _phoneController,
-                decoration: const InputDecoration(labelText: 'Phone')),
-            const SizedBox(height: 16),
-            ElevatedButton(
-                onPressed: _loginPhoneOnly, child: const Text('Login')),
-            const SizedBox(height: 8),
-            ElevatedButton(onPressed: _sendOtp, child: const Text('Send OTP')),
-            const SizedBox(height: 8),
-            TextButton(
-              onPressed: _goToVerifyWithoutResend,
-              child: const Text('I already have OTP'),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    TextField(
+                      controller: _phoneController,
+                      decoration: const InputDecoration(
+                        labelText: 'Phone Number',
+                        hintText: '+2519XXXXXXXX',
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: _loginPhoneOnly,
+                        child: const Text('Login'),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: _sendOtp,
+                        child: const Text('Send OTP'),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    TextButton(
+                      onPressed: _goToVerifyWithoutResend,
+                      child: const Text('I already have OTP'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pushNamed(context, '/register'),
+                      child: const Text('Register (owner)'),
+                    ),
+                  ],
+                ),
+              ),
             ),
-            const SizedBox(height: 8),
-            TextButton(
-                onPressed: () => Navigator.pushNamed(context, '/register'),
-                child: const Text('Register (owner)'))
           ],
         ),
       ),

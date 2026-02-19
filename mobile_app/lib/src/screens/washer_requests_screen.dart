@@ -10,6 +10,8 @@ import 'dart:async';
 import '../api/api_client.dart';
 import '../services/wash_socket_service.dart';
 import '../services/session_kv.dart';
+import '../theme/app_theme.dart';
+import '../widgets/logout_action.dart';
 
 class WasherRequestsScreen extends StatefulWidget {
   const WasherRequestsScreen({super.key});
@@ -19,6 +21,11 @@ class WasherRequestsScreen extends StatefulWidget {
 }
 
 class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
+  static const String _voyagerMapUrlTemplate =
+      'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+  static const String _hotMapUrlTemplate =
+      'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png';
+  static const List<String> _mapSubdomains = ['a', 'b', 'c'];
   final ApiClient _api = ApiClient();
   final WashSocketService _socket = WashSocketService();
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
@@ -36,6 +43,8 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
   List<LatLng> _washerTrail = [];
   List<LatLng> _ownerTrail = [];
   bool _submittingFinish = false;
+  double _mapZoom = 15;
+  bool _highContrastMap = true;
   final ImagePicker _picker = ImagePicker();
   static const String _onlinePrefFallbackKey = 'washer_online_preference';
   String _onlinePrefKey = 'washer_online_preference';
@@ -441,6 +450,41 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
     _mapCenter = point;
   }
 
+  Widget _buildLabeledMarker({
+    required IconData icon,
+    required Color color,
+    required String label,
+    required double size,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.95),
+            shape: BoxShape.circle,
+            border: Border.all(color: color, width: 2),
+          ),
+          padding: const EdgeInsets.all(4),
+          child: Icon(icon, color: color, size: size),
+        ),
+        const SizedBox(height: 4),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.95),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFFD6DEF0)),
+          ),
+          child: Text(
+            label,
+            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ownerMarkers = <LatLng>[];
@@ -471,6 +515,7 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
             ],
           ),
           IconButton(onPressed: _loading ? null : _load, icon: const Icon(Icons.refresh)),
+          const LogoutAction(),
         ],
       ),
       body: _loading
@@ -482,8 +527,8 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
                   margin: const EdgeInsets.fromLTRB(12, 10, 12, 6),
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: Colors.blueGrey.shade50,
-                    border: Border.all(color: Colors.blueGrey.shade100),
+                    color: Colors.white,
+                    border: Border.all(color: const Color(0xFFD6DEF0)),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Column(
@@ -498,10 +543,10 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
                   ),
                 ),
                 Container(
-                  height: 250,
+                  height: 340,
                   margin: const EdgeInsets.fromLTRB(12, 6, 12, 6),
                   decoration: BoxDecoration(
-                    border: Border.all(color: Colors.black12),
+                    border: Border.all(color: const Color(0xFFD6DEF0)),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Stack(
@@ -509,10 +554,19 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
                       ClipRRect(
                         borderRadius: BorderRadius.circular(10),
                         child: FlutterMap(
-                          options: MapOptions(center: center, zoom: 14),
+                          options: MapOptions(
+                            center: center,
+                            zoom: _mapZoom,
+                            minZoom: 4,
+                            maxZoom: 19,
+                          ),
                           children: [
                             TileLayer(
-                              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                              urlTemplate: _highContrastMap
+                                  ? _hotMapUrlTemplate
+                                  : _voyagerMapUrlTemplate,
+                              subdomains: _mapSubdomains,
+                              retinaMode: true,
                               userAgentPackageName: 'com.carwash.mobile',
                             ),
                             MarkerLayer(
@@ -520,34 +574,37 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
                                 if (_washerLocation != null)
                                   Marker(
                                     point: _washerLocation!,
-                                    width: 42,
-                                    height: 42,
-                                    builder: (_) => const Icon(
-                                      Icons.pedal_bike,
-                                      color: Colors.blue,
-                                      size: 34,
+                                    width: 96,
+                                    height: 74,
+                                    builder: (_) => _buildLabeledMarker(
+                                      icon: Icons.pedal_bike,
+                                      color: AppTheme.brandCyan,
+                                      label: 'You',
+                                      size: 28,
                                     ),
                                   ),
                                 if (_activeOwnerLocation != null)
                                   Marker(
                                     point: _activeOwnerLocation!,
-                                    width: 42,
-                                    height: 42,
-                                    builder: (_) => const Icon(
-                                      Icons.person_pin_circle,
-                                      color: Colors.red,
-                                      size: 36,
+                                    width: 100,
+                                    height: 74,
+                                    builder: (_) => _buildLabeledMarker(
+                                      icon: Icons.person_pin_circle,
+                                      color: AppTheme.brandNavy,
+                                      label: 'Owner',
+                                      size: 30,
                                     ),
                                   ),
                                 for (final p in ownerMarkers)
                                   Marker(
                                     point: p,
-                                    width: 42,
-                                    height: 42,
-                                    builder: (_) => const Icon(
-                                      Icons.person_pin_circle,
-                                      color: Colors.red,
-                                      size: 36,
+                                    width: 100,
+                                    height: 74,
+                                    builder: (_) => _buildLabeledMarker(
+                                      icon: Icons.person_pin_circle,
+                                      color: AppTheme.brandNavy,
+                                      label: 'Request',
+                                      size: 30,
                                     ),
                                   ),
                               ],
@@ -557,8 +614,8 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
                                 polylines: [
                                   Polyline(
                                     points: _ownerTrail,
-                                    strokeWidth: 3,
-                                    color: Colors.red.withOpacity(0.8),
+                                    strokeWidth: 5,
+                                    color: AppTheme.brandNavy.withOpacity(0.8),
                                   ),
                                 ],
                               ),
@@ -567,11 +624,93 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
                                 polylines: [
                                   Polyline(
                                     points: _washerTrail,
-                                    strokeWidth: 3,
-                                    color: Colors.blue.withOpacity(0.8),
+                                    strokeWidth: 5,
+                                    color: AppTheme.brandCyan.withOpacity(0.85),
                                   ),
                                 ],
                               ),
+                          ],
+                        ),
+                      ),
+                      Positioned(
+                        top: 8,
+                        left: 74,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.94),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: const Color(0xFFD6DEF0)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text('Map',
+                                  style:
+                                      TextStyle(fontWeight: FontWeight.w600)),
+                              const SizedBox(width: 8),
+                              ChoiceChip(
+                                label: const Text('Clear'),
+                                selected: _highContrastMap,
+                                onSelected: (v) {
+                                  if (!v) return;
+                                  setState(() => _highContrastMap = true);
+                                },
+                              ),
+                              const SizedBox(width: 6),
+                              ChoiceChip(
+                                label: const Text('Soft'),
+                                selected: !_highContrastMap,
+                                onSelected: (v) {
+                                  if (!v) return;
+                                  setState(() => _highContrastMap = false);
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        left: 8,
+                        top: 8,
+                        child: Column(
+                          children: [
+                            FloatingActionButton.small(
+                              heroTag: 'washer-map-zoom-in',
+                              onPressed: () {
+                                setState(() {
+                                  _mapZoom =
+                                      (_mapZoom + 1).clamp(4, 19).toDouble();
+                                });
+                              },
+                              child: const Icon(Icons.add),
+                            ),
+                            const SizedBox(height: 8),
+                            FloatingActionButton.small(
+                              heroTag: 'washer-map-zoom-out',
+                              onPressed: () {
+                                setState(() {
+                                  _mapZoom =
+                                      (_mapZoom - 1).clamp(4, 19).toDouble();
+                                });
+                              },
+                              child: const Icon(Icons.remove),
+                            ),
+                            const SizedBox(height: 8),
+                            FloatingActionButton.small(
+                              heroTag: 'washer-map-center',
+                              onPressed: () {
+                                final point =
+                                    _activeOwnerLocation ?? _washerLocation;
+                                if (point == null) return;
+                                setState(() {
+                                  _mapCenter = point;
+                                  _mapZoom = 16;
+                                });
+                              },
+                              child: const Icon(Icons.my_location),
+                            ),
                           ],
                         ),
                       ),
@@ -607,7 +746,8 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
                               Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.timeline, color: Colors.red, size: 16),
+                                  Icon(Icons.timeline,
+                                      color: AppTheme.brandNavy, size: 16),
                                   SizedBox(width: 6),
                                   Text('Owner path'),
                                 ],
@@ -616,7 +756,8 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
                               Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.timeline, color: Colors.blue, size: 16),
+                                  Icon(Icons.timeline,
+                                      color: AppTheme.brandCyan, size: 16),
                                   SizedBox(width: 6),
                                   Text('Biker path'),
                                 ],

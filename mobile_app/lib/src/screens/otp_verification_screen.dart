@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import '../api/api_client.dart';
+import '../widgets/logout_action.dart';
 
 class OtpVerificationScreen extends StatefulWidget {
   final String phone;
@@ -79,17 +80,33 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Verify ${widget.phone}')),
+      appBar: AppBar(
+        title: Text('Verify ${widget.phone}'),
+        actions: const [LogoutAction()],
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            TextField(
-                controller: _otpController,
-                decoration: const InputDecoration(labelText: 'OTP')),
-            const SizedBox(height: 16),
-            ElevatedButton(onPressed: _verifyOtp, child: const Text('Verify'))
-          ],
+        child: Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: _otpController,
+                  decoration: const InputDecoration(labelText: 'OTP'),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _verifyOtp,
+                    child: const Text('Verify'),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

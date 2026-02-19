@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../api/api_client.dart';
+import '../widgets/logout_action.dart';
 
 class PaymentsCompleteScreen extends StatefulWidget {
   final String txRef;
@@ -50,7 +51,10 @@ class _PaymentsCompleteScreenState extends State<PaymentsCompleteScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Payment Status')),
+      appBar: AppBar(
+        title: const Text('Payment Status'),
+        actions: const [LogoutAction()],
+      ),
       body: Center(
         child: _loading
             ? const CircularProgressIndicator()

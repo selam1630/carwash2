@@ -7,6 +7,8 @@ import 'dart:async';
 
 import '../api/api_client.dart';
 import '../services/wash_socket_service.dart';
+import '../theme/app_theme.dart';
+import '../widgets/logout_action.dart';
 
 class RequestWashScreen extends StatefulWidget {
   const RequestWashScreen({super.key});
@@ -16,6 +18,11 @@ class RequestWashScreen extends StatefulWidget {
 }
 
 class _RequestWashScreenState extends State<RequestWashScreen> {
+  static const String _voyagerMapUrlTemplate =
+      'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+  static const String _hotMapUrlTemplate =
+      'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png';
+  static const List<String> _mapSubdomains = ['a', 'b', 'c'];
   final ApiClient _api = ApiClient();
   final WashSocketService _socket = WashSocketService();
 
@@ -26,6 +33,9 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
   String? _requestId;
   String _status = 'Ready to request a wash';
   bool _loading = false;
+  double _mapZoom = 15;
+  bool _highContrastMap = true;
+  bool _didInitialNearbyFocus = false;
   Timer? _nearbyTimer;
   StreamSubscription<Position>? _ownerPositionSub;
   List<LatLng> _ownerTrail = [];
@@ -145,32 +155,84 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
     if (_ownerLocation == null) return;
 
     _nearbyTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
-      if (_ownerLocation == null) return;
-      try {
-        final items = await _api.getNearbyWashers(
-          lat: _ownerLocation!.latitude,
-          lng: _ownerLocation!.longitude,
-          radiusKm: 3,
-        );
-        final washers = <_NearbyWasher>[];
-        for (final it in items) {
-          if (it is Map) {
-            final washerId = it['washerId']?.toString();
-            final lat = _asDouble(it['lat']);
-            final lng = _asDouble(it['lng']);
-            if (washerId != null &&
-                washerId.isNotEmpty &&
-                lat != null &&
-                lng != null) {
-              washers
-                  .add(_NearbyWasher(washerId: washerId, lat: lat, lng: lng));
-            }
+      _refreshNearbyWashers();
+    });
+  }
+
+  Future<void> _refreshNearbyWashers() async {
+    if (_ownerLocation == null) return;
+    try {
+      final items = await _api.getNearbyWashers(
+        lat: _ownerLocation!.latitude,
+        lng: _ownerLocation!.longitude,
+        radiusKm: 3,
+      );
+      final washers = <_NearbyWasher>[];
+      for (final it in items) {
+        if (it is Map) {
+          final washerId = it['washerId']?.toString();
+          final lat = _asDouble(it['lat']);
+          final lng = _asDouble(it['lng']);
+          if (washerId != null &&
+              washerId.isNotEmpty &&
+              lat != null &&
+              lng != null) {
+            washers.add(_NearbyWasher(washerId: washerId, lat: lat, lng: lng));
           }
         }
-        if (mounted) setState(() => _nearbyWashers = washers);
-      } catch (_) {
-        // ignore polling errors
       }
+      if (!mounted) return;
+      setState(() => _nearbyWashers = washers);
+      if (_requestId == null && _nearbyWashers.isNotEmpty) {
+        _focusNearbyCluster(force: true);
+      } else {
+        _focusNearbyCluster();
+      }
+    } catch (_) {
+      // ignore polling errors
+    }
+  }
+
+  void _focusNearbyCluster({bool force = false}) {
+    if (_didInitialNearbyFocus && !force) return;
+    if (_nearbyWashers.isEmpty) return;
+
+    // Focus on bikers only so they appear first and larger on initial view.
+    var minLat = _nearbyWashers.first.lat;
+    var maxLat = _nearbyWashers.first.lat;
+    var minLng = _nearbyWashers.first.lng;
+    var maxLng = _nearbyWashers.first.lng;
+
+    for (final w in _nearbyWashers) {
+      if (w.lat < minLat) minLat = w.lat;
+      if (w.lat > maxLat) maxLat = w.lat;
+      if (w.lng < minLng) minLng = w.lng;
+      if (w.lng > maxLng) maxLng = w.lng;
+    }
+
+    final center = LatLng((minLat + maxLat) / 2, (minLng + maxLng) / 2);
+    final latDelta = (maxLat - minLat).abs();
+    final lngDelta = (maxLng - minLng).abs();
+    final span = latDelta > lngDelta ? latDelta : lngDelta;
+
+    double zoom;
+    if (_nearbyWashers.length == 1) {
+      zoom = 17.2;
+    } else if (span < 0.002) {
+      zoom = 17.0;
+    } else if (span < 0.005) {
+      zoom = 16.2;
+    } else if (span < 0.012) {
+      zoom = 15.4;
+    } else {
+      zoom = 14.6;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _mapCenter = center;
+      _mapZoom = zoom;
+      _didInitialNearbyFocus = true;
     });
   }
 
@@ -197,7 +259,7 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
       _ownerLocation = LatLng(pos.latitude, pos.longitude);
       _appendTrail(_ownerTrail, _ownerLocation!);
     });
-    _followOnMap(_ownerLocation!);
+    await _refreshNearbyWashers();
     _startNearbyPolling();
   }
 
@@ -215,7 +277,11 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
         _ownerLocation = next;
         _appendTrail(_ownerTrail, next);
       });
-      _followOnMap(next);
+      if (_requestId == null && _nearbyWashers.isNotEmpty) {
+        _focusNearbyCluster(force: true);
+      } else if (_requestId != null) {
+        _followOnMap(next);
+      }
 
       final requestId = _requestId;
       if (requestId != null && requestId.isNotEmpty) {
@@ -334,6 +400,41 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
     _mapCenter = point;
   }
 
+  Widget _buildLabeledMarker({
+    required IconData icon,
+    required Color color,
+    required String label,
+    required double size,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.95),
+            shape: BoxShape.circle,
+            border: Border.all(color: color, width: 2),
+          ),
+          padding: const EdgeInsets.all(4),
+          child: Icon(icon, color: color, size: size),
+        ),
+        const SizedBox(height: 4),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.95),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFFD6DEF0)),
+          ),
+          child: Text(
+            label,
+            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
+          ),
+        ),
+      ],
+    );
+  }
+
   Future<void> _showCompletionDialog(String requestId) async {
     if (!mounted || _completionDialogOpen) return;
     _completionDialogOpen = true;
@@ -404,62 +505,65 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
       if (_ownerLocation != null)
         Marker(
           point: _ownerLocation!,
-          width: 44,
-          height: 44,
-          builder: (_) => Container(
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.9),
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.blue, width: 2),
-            ),
-            child: const Icon(Icons.person_pin_circle,
-                color: Colors.blue, size: 36),
+          width: 86,
+          height: 72,
+          builder: (_) => _buildLabeledMarker(
+            icon: Icons.person_pin_circle,
+            color: AppTheme.brandNavy,
+            label: 'You',
+            size: 30,
           ),
         ),
       for (final w in _nearbyWashers)
         Marker(
           point: LatLng(w.lat, w.lng),
-          width: 40,
-          height: 40,
-          builder: (_) => Container(
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.9),
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.orange, width: 2),
-            ),
-            child: const Icon(Icons.pedal_bike, color: Colors.orange, size: 26),
+          width: 90,
+          height: 72,
+          builder: (_) => _buildLabeledMarker(
+            icon: Icons.pedal_bike,
+            color: AppTheme.brandCyan,
+            label: 'Nearby',
+            size: 24,
           ),
         ),
       if (_washerLocation != null)
         Marker(
           point: _washerLocation!,
-          width: 44,
-          height: 44,
-          builder: (_) => Container(
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.9),
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.green, width: 2),
-            ),
-            child: const Icon(Icons.delivery_dining,
-                color: Colors.green, size: 34),
+          width: 100,
+          height: 74,
+          builder: (_) => _buildLabeledMarker(
+            icon: Icons.delivery_dining,
+            color: Colors.green,
+            label: 'Assigned',
+            size: 28,
           ),
         ),
     ];
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Request Wash')),
+      appBar: AppBar(
+        title: const Text('Request Wash'),
+        actions: const [LogoutAction()],
+      ),
       body: Column(
         children: [
           Expanded(
             child: Stack(
               children: [
                 FlutterMap(
-                  options: MapOptions(center: center, zoom: 14),
+                  options: MapOptions(
+                    center: center,
+                    zoom: _mapZoom,
+                    minZoom: 4,
+                    maxZoom: 19,
+                  ),
                   children: [
                     TileLayer(
-                      urlTemplate:
-                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      urlTemplate: _highContrastMap
+                          ? _hotMapUrlTemplate
+                          : _voyagerMapUrlTemplate,
+                      subdomains: _mapSubdomains,
+                      retinaMode: true,
                       userAgentPackageName: 'com.carwash.mobile',
                     ),
                     MarkerLayer(markers: markers),
@@ -468,8 +572,8 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
                         polylines: [
                           Polyline(
                             points: _ownerTrail,
-                            strokeWidth: 3,
-                            color: Colors.blue.withOpacity(0.8),
+                            strokeWidth: 5,
+                            color: AppTheme.brandNavy.withOpacity(0.8),
                           ),
                         ],
                       ),
@@ -478,7 +582,7 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
                         polylines: [
                           Polyline(
                             points: _washerTrail,
-                            strokeWidth: 3,
+                            strokeWidth: 5,
                             color: Colors.green.withOpacity(0.8),
                           ),
                         ],
@@ -493,7 +597,7 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
                     decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.92),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.black12),
+                      border: Border.all(color: const Color(0xFFD6DEF0)),
                     ),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -506,7 +610,7 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(Icons.person_pin_circle,
-                                color: Colors.blue, size: 18),
+                                color: AppTheme.brandNavy, size: 18),
                             SizedBox(width: 8),
                             Text('You'),
                           ],
@@ -516,7 +620,7 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             const Icon(Icons.pedal_bike,
-                                color: Colors.orange, size: 18),
+                                color: AppTheme.brandCyan, size: 18),
                             const SizedBox(width: 8),
                             Text('Nearby washers ($nearbyCount)'),
                           ],
@@ -535,7 +639,8 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
                         const Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.timeline, color: Colors.blue, size: 18),
+                            Icon(Icons.timeline,
+                                color: AppTheme.brandNavy, size: 18),
                             SizedBox(width: 8),
                             Text('Your path'),
                           ],
@@ -551,6 +656,84 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
                         ),
                       ],
                     ),
+                  ),
+                ),
+                Positioned(
+                  top: 12,
+                  left: 82,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.94),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFD6DEF0)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text('Map',
+                            style: TextStyle(fontWeight: FontWeight.w600)),
+                        const SizedBox(width: 8),
+                        ChoiceChip(
+                          label: const Text('Clear'),
+                          selected: _highContrastMap,
+                          onSelected: (v) {
+                            if (!v) return;
+                            setState(() => _highContrastMap = true);
+                          },
+                        ),
+                        const SizedBox(width: 6),
+                        ChoiceChip(
+                          label: const Text('Soft'),
+                          selected: !_highContrastMap,
+                          onSelected: (v) {
+                            if (!v) return;
+                            setState(() => _highContrastMap = false);
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 12,
+                  top: 12,
+                  child: Column(
+                    children: [
+                      FloatingActionButton.small(
+                        heroTag: 'owner-map-zoom-in',
+                        onPressed: () {
+                          setState(() {
+                            _mapZoom = (_mapZoom + 1).clamp(4, 19).toDouble();
+                          });
+                        },
+                        child: const Icon(Icons.add),
+                      ),
+                      const SizedBox(height: 8),
+                      FloatingActionButton.small(
+                        heroTag: 'owner-map-zoom-out',
+                        onPressed: () {
+                          setState(() {
+                            _mapZoom = (_mapZoom - 1).clamp(4, 19).toDouble();
+                          });
+                        },
+                        child: const Icon(Icons.remove),
+                      ),
+                      const SizedBox(height: 8),
+                      FloatingActionButton.small(
+                        heroTag: 'owner-map-center',
+                        onPressed: () {
+                          final point = _washerLocation ?? _ownerLocation;
+                          if (point == null) return;
+                          setState(() {
+                            _mapCenter = point;
+                            _mapZoom = 16;
+                          });
+                        },
+                        child: const Icon(Icons.my_location),
+                      ),
+                    ],
                   ),
                 ),
               ],

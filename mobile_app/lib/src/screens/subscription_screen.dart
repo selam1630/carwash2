@@ -3,6 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:dio/dio.dart';
 import '../api/api_client.dart';
+import '../widgets/logout_action.dart';
 
 class SubscriptionScreen extends StatefulWidget {
   const SubscriptionScreen({super.key});
@@ -112,7 +113,10 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Choose a Subscription')),
+      appBar: AppBar(
+        title: const Text('Choose a Subscription'),
+        actions: const [LogoutAction()],
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(

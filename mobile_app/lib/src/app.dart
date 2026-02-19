@@ -7,6 +7,8 @@ import 'screens/request_wash_screen.dart';
 import 'screens/washer_requests_screen.dart';
 import 'screens/sales_owner_registration_screen.dart';
 import 'screens/splash_screen.dart';
+import 'screens/login_screen.dart';
+import 'theme/app_theme.dart';
 
 class App extends StatelessWidget {
   const App({super.key});
@@ -15,10 +17,11 @@ class App extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Car Wash Mobile',
-      theme: ThemeData(primarySwatch: Colors.blue),
+      theme: AppTheme.light,
       home: const SplashScreen(),
       routes: {
         '/register': (_) => const RegistrationScreen(),
+        '/login': (_) => const LoginScreen(),
         '/otp': (ctx) {
           final args =
               ModalRoute.of(ctx)!.settings.arguments as Map<String, dynamic>?;

@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../api/api_client.dart';
+import '../widgets/logout_action.dart';
 
 class RegistrationScreen extends StatefulWidget {
   const RegistrationScreen({super.key});
@@ -104,7 +105,10 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Register Owner')),
+      appBar: AppBar(
+        title: const Text('Register Owner'),
+        actions: const [LogoutAction()],
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Form(
