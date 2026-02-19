@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'screens/login_screen.dart';
 import 'screens/registration_screen.dart';
 import 'screens/otp_verification_screen.dart';
 import 'screens/subscription_screen.dart';
@@ -7,6 +6,7 @@ import 'screens/payments_complete_screen.dart';
 import 'screens/request_wash_screen.dart';
 import 'screens/washer_requests_screen.dart';
 import 'screens/sales_owner_registration_screen.dart';
+import 'screens/splash_screen.dart';
 
 class App extends StatelessWidget {
   const App({super.key});
@@ -16,7 +16,7 @@ class App extends StatelessWidget {
     return MaterialApp(
       title: 'Car Wash Mobile',
       theme: ThemeData(primarySwatch: Colors.blue),
-      home: const LoginScreen(),
+      home: const SplashScreen(),
       routes: {
         '/register': (_) => const RegistrationScreen(),
         '/otp': (ctx) {
