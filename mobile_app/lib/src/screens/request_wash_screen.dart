@@ -23,8 +23,8 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
       'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
   static const String _voyagerDarkMapUrlTemplate =
       'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-  static const String _voyagerDarkSoftMapUrlTemplate =
-      'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png';
+  static const String _darkMatterMapUrlTemplate =
+      'https://{s}.basemaps.cartocdn.com/rastertiles/dark_matter/{z}/{x}/{y}{r}.png';
   static const String _hotMapUrlTemplate =
       'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png';
   static const List<String> _mapSubdomains = ['a', 'b', 'c'];
@@ -437,13 +437,23 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
     required Color color,
     required String label,
     required double size,
+    Color? fillColor,
+    Color? labelFillColor,
+    Color? labelTextColor,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final markerFill = fillColor ??
+        (isDark ? const Color(0xFF0D1220).withOpacity(0.95) : Colors.white.withOpacity(0.95));
+    final chipFill = labelFillColor ??
+        (isDark ? const Color(0xFF0A1020).withOpacity(0.95) : Colors.white.withOpacity(0.95));
+    final chipText = labelTextColor ?? (isDark ? Colors.white : Colors.black87);
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.95),
+            color: markerFill,
             shape: BoxShape.circle,
             border: Border.all(color: color, width: 2),
           ),
@@ -454,13 +464,17 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.95),
+            color: chipFill,
             borderRadius: BorderRadius.circular(8),
             border: Border.all(color: const Color(0xFFD6DEF0)),
           ),
           child: Text(
             label,
-            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600),
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: chipText,
+            ),
           ),
         ),
       ],
@@ -534,8 +548,8 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final mapUrl = isDark
         ? (_highContrastMap
-            ? _voyagerDarkMapUrlTemplate
-            : _voyagerDarkSoftMapUrlTemplate)
+            ? _darkMatterMapUrlTemplate
+            : _voyagerDarkMapUrlTemplate)
         : (_highContrastMap ? _hotMapUrlTemplate : _voyagerMapUrlTemplate);
     final center = _mapCenter ?? _ownerLocation ?? LatLng(9.03, 38.74);
     final nearbyCount = _nearbyWashers.length;
@@ -559,9 +573,12 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
           height: 72,
           builder: (_) => _buildLabeledMarker(
             icon: Icons.pedal_bike,
-            color: AppTheme.brandCyan,
+            color: isDark ? const Color(0xFF00E5FF) : AppTheme.brandCyan,
             label: 'Nearby',
             size: 24,
+            fillColor: isDark ? const Color(0xFF060A16) : null,
+            labelFillColor: isDark ? const Color(0xFF060A16) : null,
+            labelTextColor: isDark ? const Color(0xFFE6FBFF) : null,
           ),
         ),
       if (_washerLocation != null)
