@@ -140,6 +140,19 @@ export class WashService {
     });
   }
 
+  async getActiveForWasher(washerUser: AuthUser) {
+    await this.ensureWasherOrAdmin(washerUser);
+    const washerId = this.getUserId(washerUser);
+
+    return this.washRepo.findOne({
+      where: [
+        { washerId, status: WashRequestStatus.ACCEPTED },
+        { washerId, status: WashRequestStatus.PENDING_OWNER_CONFIRMATION },
+      ],
+      order: { createdAt: 'DESC' },
+    });
+  }
+
   async accept(washerUser: AuthUser, requestId: string) {
     await this.ensureWasherOrAdmin(washerUser);
     const washerId = this.getUserId(washerUser);

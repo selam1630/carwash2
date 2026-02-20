@@ -26,8 +26,8 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
       'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
   static const String _voyagerDarkMapUrlTemplate =
       'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-  static const String _darkMatterMapUrlTemplate =
-      'https://{s}.basemaps.cartocdn.com/rastertiles/dark_matter/{z}/{x}/{y}{r}.png';
+  static const String _voyagerDarkSoftMapUrlTemplate =
+      'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png';
   static const String _hotMapUrlTemplate =
       'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png';
   static const List<String> _mapSubdomains = ['a', 'b', 'c'];
@@ -194,6 +194,7 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
     });
 
     await _load();
+    await _restoreAcceptedRequest();
     await _startWasherTracking();
 
     // Restore previous online state so biker stays online across app restarts.
@@ -233,6 +234,38 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
       }
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _restoreAcceptedRequest() async {
+    try {
+      final active = await _api.getWasherActiveWashRequest();
+      if (active == null) return;
+      final requestId = active['id']?.toString();
+      if (requestId == null || requestId.isEmpty) return;
+
+      final latRaw = active['pickupLat'] ?? active['ownerLat'] ?? active['lat'];
+      final lngRaw = active['pickupLng'] ?? active['ownerLng'] ?? active['lng'];
+      final lat = latRaw is num ? latRaw.toDouble() : double.tryParse('$latRaw');
+      final lng = lngRaw is num ? lngRaw.toDouble() : double.tryParse('$lngRaw');
+
+      if (!mounted) return;
+      setState(() {
+        _activeRequestId = requestId;
+        if (lat != null && lng != null) {
+          _activeOwnerLocation = LatLng(lat, lng);
+          _appendTrail(_ownerTrail, _activeOwnerLocation!);
+        }
+        if (_washerLocation != null) {
+          _appendTrail(_washerTrail, _washerLocation!);
+        }
+      });
+      _socket.joinRequest(requestId);
+      if (_activeOwnerLocation != null) {
+        _followOnMap(_activeOwnerLocation!);
+      }
+    } catch (_) {
+      // If active endpoint is unavailable for this role, keep current behavior.
     }
   }
 
@@ -509,8 +542,8 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final mapUrl = isDark
         ? (_highContrastMap
-            ? _darkMatterMapUrlTemplate
-            : _voyagerDarkMapUrlTemplate)
+            ? _voyagerDarkMapUrlTemplate
+            : _voyagerDarkSoftMapUrlTemplate)
         : (_highContrastMap ? _hotMapUrlTemplate : _voyagerMapUrlTemplate);
     final ownerMarkers = <LatLng>[];
     for (final r in _requests) {
@@ -535,7 +568,13 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
         actions: [
           Row(
             children: [
-              const Text('Online', style: TextStyle(fontSize: 12)),
+              Text(
+                'Online',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDark ? Colors.white : Colors.black87,
+                ),
+              ),
               Switch(value: _online, onChanged: _loading ? null : _toggleOnline),
             ],
           ),
@@ -553,18 +592,42 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
                   margin: const EdgeInsets.fromLTRB(12, 10, 12, 6),
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    border: Border.all(color: const Color(0xFFD6DEF0)),
+                    color: isDark
+                        ? const Color(0xFF0A1020).withOpacity(0.92)
+                        : Colors.white,
+                    border: Border.all(
+                      color: isDark
+                          ? const Color(0xFF294180)
+                          : const Color(0xFFD6DEF0),
+                    ),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Logged in as', style: TextStyle(fontWeight: FontWeight.w700)),
+                      Text(
+                        'Logged in as',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: isDark ? Colors.white : Colors.black87,
+                        ),
+                      ),
                       const SizedBox(height: 4),
-                      Text('Phone: ${_currentPhone.isEmpty ? "-" : _currentPhone}'),
-                      Text('Role: ${_currentRole.isEmpty ? "-" : _currentRole}'),
-                      Text('Active request: ${_activeRequestId ?? "-"}'),
+                      Text(
+                        'Phone: ${_currentPhone.isEmpty ? "-" : _currentPhone}',
+                        style: TextStyle(
+                            color: isDark ? Colors.white70 : Colors.black87),
+                      ),
+                      Text(
+                        'Role: ${_currentRole.isEmpty ? "-" : _currentRole}',
+                        style: TextStyle(
+                            color: isDark ? Colors.white70 : Colors.black87),
+                      ),
+                      Text(
+                        'Active request: ${_activeRequestId ?? "-"}',
+                        style: TextStyle(
+                            color: isDark ? Colors.white70 : Colors.black87),
+                      ),
                     ],
                   ),
                 ),
@@ -671,16 +734,26 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.94),
+                            color: isDark
+                                ? const Color(0xFF0A1020).withOpacity(0.94)
+                                : Colors.white.withOpacity(0.94),
                             borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: const Color(0xFFD6DEF0)),
+                            border: Border.all(
+                              color: isDark
+                                  ? const Color(0xFF294180)
+                                  : const Color(0xFFD6DEF0),
+                            ),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Text('Map',
-                                  style:
-                                      TextStyle(fontWeight: FontWeight.w600)),
+                              Text(
+                                'Map',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? Colors.white : Colors.black87,
+                                ),
+                              ),
                               const SizedBox(width: 8),
                               ChoiceChip(
                                 label: const Text('Clear'),
@@ -752,13 +825,23 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
                         child: Container(
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.92),
+                            color: isDark
+                                ? const Color(0xFF0A1020).withOpacity(0.92)
+                                : Colors.white.withOpacity(0.92),
                             borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: isDark
+                                  ? const Color(0xFF294180)
+                                  : const Color(0xFFD6DEF0),
+                            ),
                           ),
                           child: Text(
                             _activeRequestId != null
                                 ? 'Live tracking active'
                                 : 'Owner markers: ${ownerMarkers.length}',
+                            style: TextStyle(
+                                color:
+                                    isDark ? Colors.white : Colors.black87),
                           ),
                         ),
                       ),
@@ -768,10 +851,17 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
                         child: Container(
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.92),
+                            color: isDark
+                                ? const Color(0xFF0A1020).withOpacity(0.92)
+                                : Colors.white.withOpacity(0.92),
                             borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: isDark
+                                  ? const Color(0xFF294180)
+                                  : const Color(0xFFD6DEF0),
+                            ),
                           ),
-                          child: const Column(
+                          child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -781,7 +871,11 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
                                   Icon(Icons.timeline,
                                       color: AppTheme.brandNavy, size: 16),
                                   SizedBox(width: 6),
-                                  Text('Owner path'),
+                                  Text('Owner path',
+                                      style: TextStyle(
+                                          color: isDark
+                                              ? Colors.white
+                                              : Colors.black87)),
                                 ],
                               ),
                               SizedBox(height: 4),
@@ -791,7 +885,11 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
                                   Icon(Icons.timeline,
                                       color: AppTheme.brandCyan, size: 16),
                                   SizedBox(width: 6),
-                                  Text('Biker path'),
+                                  Text('Biker path',
+                                      style: TextStyle(
+                                          color: isDark
+                                              ? Colors.white
+                                              : Colors.black87)),
                                 ],
                               ),
                             ],

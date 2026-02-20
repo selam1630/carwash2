@@ -23,8 +23,8 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
       'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
   static const String _voyagerDarkMapUrlTemplate =
       'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-  static const String _darkMatterMapUrlTemplate =
-      'https://{s}.basemaps.cartocdn.com/rastertiles/dark_matter/{z}/{x}/{y}{r}.png';
+  static const String _voyagerDarkSoftMapUrlTemplate =
+      'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png';
   static const String _hotMapUrlTemplate =
       'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png';
   static const List<String> _mapSubdomains = ['a', 'b', 'c'];
@@ -46,6 +46,9 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
   StreamSubscription<Position>? _ownerPositionSub;
   List<LatLng> _ownerTrail = [];
   List<LatLng> _washerTrail = [];
+  List<LatLng> _routeToWasher = [];
+  int? _etaMinutes;
+  DateTime? _lastRouteFetchAt;
   bool _completionDialogOpen = false;
 
   @override
@@ -90,6 +93,7 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
         _appendTrail(_washerTrail, _washerLocation!);
         _status = 'Washer on the way';
       });
+      _updateRouteAndEta();
       _followOnMap(_washerLocation!);
     });
 
@@ -108,6 +112,8 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
       setState(() {
         _status = 'Wash completed and confirmed';
         _requestId = null;
+        _routeToWasher = [];
+        _etaMinutes = null;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Thanks! Job marked as completed.')),
@@ -124,6 +130,8 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
             'You marked it as not finished. Reassigning nearest washer...';
         _washerLocation = null;
         _washerTrail = [];
+        _routeToWasher = [];
+        _etaMinutes = null;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -148,6 +156,7 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
             _washerLocation = LatLng(lat, lng);
             _appendTrail(_washerTrail, _washerLocation!);
           });
+          _updateRouteAndEta(force: true);
           _followOnMap(_washerLocation!);
         }
       }
@@ -302,6 +311,7 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
       if (_requestId == null && _nearbyWashers.isNotEmpty) {
         _focusNearbyCluster(force: true);
       } else if (_requestId != null) {
+        _updateRouteAndEta();
         _followOnMap(next);
       }
 
@@ -432,6 +442,56 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
     });
   }
 
+  Future<void> _updateRouteAndEta({bool force = false}) async {
+    final owner = _ownerLocation;
+    final washer = _washerLocation;
+    if (owner == null || washer == null) return;
+
+    final now = DateTime.now();
+    if (!force &&
+        _lastRouteFetchAt != null &&
+        now.difference(_lastRouteFetchAt!).inSeconds < 12) {
+      return;
+    }
+    _lastRouteFetchAt = now;
+
+    try {
+      final url = 'https://router.project-osrm.org/route/v1/driving/'
+          '${owner.longitude},${owner.latitude};${washer.longitude},${washer.latitude}'
+          '?overview=full&geometries=geojson';
+      final resp = await Dio().get(url);
+      final data = resp.data;
+      if (data is! Map || data['routes'] is! List || (data['routes'] as List).isEmpty) {
+        return;
+      }
+      final route = (data['routes'] as List).first;
+      if (route is! Map) return;
+      final geometry = route['geometry'];
+      final durationRaw = route['duration'];
+      final coords = geometry is Map ? geometry['coordinates'] : null;
+      if (coords is! List) return;
+
+      final points = <LatLng>[];
+      for (final c in coords) {
+        if (c is List && c.length >= 2) {
+          final lng = _asDouble(c[0]);
+          final lat = _asDouble(c[1]);
+          if (lat != null && lng != null) points.add(LatLng(lat, lng));
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _routeToWasher = points;
+        final durationSeconds = _asDouble(durationRaw);
+        if (durationSeconds != null && durationSeconds > 0) {
+          _etaMinutes = (durationSeconds / 60).ceil();
+        }
+      });
+    } catch (_) {
+      // Keep app responsive if routing service is unavailable.
+    }
+  }
+
   Widget _buildLabeledMarker({
     required IconData icon,
     required Color color,
@@ -513,6 +573,8 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
         setState(() {
           _status = 'Wash completed and confirmed';
           _requestId = null;
+          _routeToWasher = [];
+          _etaMinutes = null;
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -523,6 +585,8 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
           _status = 'Not finished. Request reopened to nearby washers.';
           _washerLocation = null;
           _washerTrail = [];
+          _routeToWasher = [];
+          _etaMinutes = null;
         });
       }
     } catch (e) {
@@ -548,8 +612,8 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final mapUrl = isDark
         ? (_highContrastMap
-            ? _darkMatterMapUrlTemplate
-            : _voyagerDarkMapUrlTemplate)
+            ? _voyagerDarkMapUrlTemplate
+            : _voyagerDarkSoftMapUrlTemplate)
         : (_highContrastMap ? _hotMapUrlTemplate : _voyagerMapUrlTemplate);
     final center = _mapCenter ?? _ownerLocation ?? LatLng(9.03, 38.74);
     final nearbyCount = _nearbyWashers.length;
@@ -641,6 +705,18 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
                           ),
                         ],
                       ),
+                    if (_routeToWasher.length > 1)
+                      PolylineLayer(
+                        polylines: [
+                          Polyline(
+                            points: _routeToWasher,
+                            strokeWidth: 6,
+                            color: isDark
+                                ? const Color(0xFFFFC107)
+                                : const Color(0xFFFF8F00),
+                          ),
+                        ],
+                      ),
                   ],
                 ),
                 Positioned(
@@ -649,24 +725,39 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
                   child: Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.92),
+                      color: isDark
+                          ? const Color(0xFF0A1020).withOpacity(0.92)
+                          : Colors.white.withOpacity(0.92),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFD6DEF0)),
+                      border: Border.all(
+                        color: isDark
+                            ? const Color(0xFF294180)
+                            : const Color(0xFFD6DEF0),
+                      ),
                     ),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Legend',
-                            style: TextStyle(fontWeight: FontWeight.w700)),
+                        Text(
+                          'Legend',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: isDark ? Colors.white : Colors.black87,
+                          ),
+                        ),
                         const SizedBox(height: 6),
-                        const Row(
+                        Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.person_pin_circle,
+                            const Icon(Icons.person_pin_circle,
                                 color: AppTheme.brandNavy, size: 18),
-                            SizedBox(width: 8),
-                            Text('You'),
+                            const SizedBox(width: 8),
+                            Text('You',
+                                style: TextStyle(
+                                    color: isDark
+                                        ? Colors.white
+                                        : Colors.black87)),
                           ],
                         ),
                         const SizedBox(height: 4),
@@ -676,38 +767,75 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
                             const Icon(Icons.pedal_bike,
                                 color: AppTheme.brandCyan, size: 18),
                             const SizedBox(width: 8),
-                            Text('Nearby washers ($nearbyCount)'),
+                            Text(
+                              'Nearby washers ($nearbyCount)',
+                              style: TextStyle(
+                                  color:
+                                      isDark ? Colors.white : Colors.black87),
+                            ),
                           ],
                         ),
                         const SizedBox(height: 4),
-                        const Row(
+                        Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.delivery_dining,
+                            const Icon(Icons.delivery_dining,
                                 color: Colors.green, size: 18),
-                            SizedBox(width: 8),
-                            Text('Assigned washer'),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Assigned washer',
+                              style: TextStyle(
+                                  color:
+                                      isDark ? Colors.white : Colors.black87),
+                            ),
                           ],
                         ),
                         const SizedBox(height: 4),
-                        const Row(
+                        Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.timeline,
+                            const Icon(Icons.timeline,
                                 color: AppTheme.brandNavy, size: 18),
-                            SizedBox(width: 8),
-                            Text('Your path'),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Your path',
+                              style: TextStyle(
+                                  color:
+                                      isDark ? Colors.white : Colors.black87),
+                            ),
                           ],
                         ),
                         const SizedBox(height: 4),
-                        const Row(
+                        Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.timeline, color: Colors.green, size: 18),
-                            SizedBox(width: 8),
-                            Text('Washer path'),
+                            const Icon(Icons.timeline,
+                                color: Colors.green, size: 18),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Washer path',
+                              style: TextStyle(
+                                  color:
+                                      isDark ? Colors.white : Colors.black87),
+                            ),
                           ],
                         ),
+                        if (_etaMinutes != null) const SizedBox(height: 4),
+                        if (_etaMinutes != null)
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.schedule,
+                                  color: Color(0xFFFFA000), size: 18),
+                              const SizedBox(width: 8),
+                              Text(
+                                'ETA: $_etaMinutes min',
+                                style: TextStyle(
+                                    color:
+                                        isDark ? Colors.white : Colors.black87),
+                              ),
+                            ],
+                          ),
                       ],
                     ),
                   ),

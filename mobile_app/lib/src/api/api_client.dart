@@ -372,6 +372,23 @@ class ApiClient {
     }
   }
 
+  Future<Map<String, dynamic>?> getWasherActiveWashRequest() async {
+    try {
+      final resp = await dio.get('/wash/requests/active-washer');
+      final data = resp.data;
+      if (data == null) return null;
+      if (data is String && (data.trim().isEmpty || data.trim() == 'null')) {
+        return null;
+      }
+      final map = _asMap(data);
+      if (map.isEmpty) return null;
+      return map;
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 403) return null;
+      rethrow;
+    }
+  }
+
   Future<Map<String, dynamic>> acceptWashRequest(String requestId) async {
     final resp = await dio.post('/wash/requests/$requestId/accept');
     return resp.data as Map<String, dynamic>;

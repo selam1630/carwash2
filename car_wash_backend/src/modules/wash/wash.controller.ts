@@ -54,6 +54,12 @@ export class WashController {
     return this.washService.getActiveForOwner(req.user);
   }
 
+  @Get('requests/active-washer')
+  @Roles(UserRole.WASHER, UserRole.ADMIN)
+  async washerActiveRequest(@Req() req: any) {
+    return this.washService.getActiveForWasher(req.user);
+  }
+
   @Post('requests/:id/accept')
   @Roles(UserRole.WASHER, UserRole.ADMIN)
   async acceptRequest(@Req() req: any, @Param('id') requestId: string) {
