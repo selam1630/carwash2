@@ -330,6 +330,36 @@ export class WashService {
     return { ok: true, online: true };
   }
 
+  async getWasherPresence(washerUser: AuthUser) {
+    await this.ensureWasher(washerUser);
+    const washerId = this.getUserId(washerUser);
+    const metaKey = `wash:washer:${washerId}:presence`;
+    const raw = await this.redis.get(metaKey);
+    if (!raw) {
+      return { online: false, lat: null, lng: null, updatedAt: null };
+    }
+    try {
+      const parsed = JSON.parse(raw) as {
+        lat?: number;
+        lng?: number;
+        updatedAt?: string;
+      };
+      const lat = Number(parsed.lat);
+      const lng = Number(parsed.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        return { online: false, lat: null, lng: null, updatedAt: null };
+      }
+      return {
+        online: true,
+        lat,
+        lng,
+        updatedAt: parsed.updatedAt ?? null,
+      };
+    } catch (_) {
+      return { online: false, lat: null, lng: null, updatedAt: null };
+    }
+  }
+
   async listNearbyWashers(ownerUser: AuthUser, lat: number, lng: number, radiusKm = 3) {
     await this.ensureOwner(ownerUser);
 

@@ -18,6 +18,11 @@ Environment
 
 ```
 FLUTTER_API_BASE_URL=http://localhost:3000
+FLUTTER_GEBETA_API_TOKEN=your_gebeta_token_here
+# Optional overrides (only set these if your Gebeta account has tile access):
+# FLUTTER_GEBETA_TILE_URL_TEMPLATE=...
+# FLUTTER_GEBETA_TILE_LIGHT_SOFT_URL_TEMPLATE=...
+# FLUTTER_GEBETA_TILE_DARK_URL_TEMPLATE=...
 ```
 
 What I scaffolded

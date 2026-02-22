@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -52,7 +53,10 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
   bool _highContrastMap = true;
   final ImagePicker _picker = ImagePicker();
   static const String _onlinePrefFallbackKey = 'washer_online_preference';
+  static const String _explicitOfflineFallbackKey =
+      'washer_explicit_offline_preference';
   String _onlinePrefKey = 'washer_online_preference';
+  String _explicitOfflinePrefKey = 'washer_explicit_offline_preference';
 
   Future<String?> _readPref(String key) async {
     if (isSessionKvAvailable) return sessionRead(key);
@@ -65,6 +69,28 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
       return;
     }
     await _storage.write(key: key, value: value);
+  }
+
+  String? _gebetaTileTemplate(
+      {required bool isDark, required bool highContrast}) {
+    if (isDark) {
+      final dark = dotenv.env['FLUTTER_GEBETA_TILE_DARK_URL_TEMPLATE']?.trim();
+      if (dark != null && dark.isNotEmpty) return dark;
+    }
+    if (!isDark && !highContrast) {
+      final lightSoft =
+          dotenv.env['FLUTTER_GEBETA_TILE_LIGHT_SOFT_URL_TEMPLATE']?.trim();
+      if (lightSoft != null && lightSoft.isNotEmpty) return lightSoft;
+    }
+    final light = dotenv.env['FLUTTER_GEBETA_TILE_URL_TEMPLATE']?.trim();
+    if (light != null && light.isNotEmpty) return light;
+    return null;
+  }
+
+  String _injectGebetaToken(String template) {
+    final token = dotenv.env['FLUTTER_GEBETA_API_TOKEN']?.trim() ?? '';
+    if (token.isEmpty) return template;
+    return template.replaceAll('{apiKey}', token);
   }
 
   @override
@@ -93,6 +119,8 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
     }
     _onlinePrefKey =
         'washer_online_preference_${phone.isNotEmpty ? phone : 'unknown'}';
+    _explicitOfflinePrefKey =
+        'washer_explicit_offline_preference_${phone.isNotEmpty ? phone : 'unknown'}';
 
     await _socket.connect();
     _socket.listenRequestCreated((event) {
@@ -197,11 +225,46 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
     await _restoreAcceptedRequest();
     await _startWasherTracking();
 
+    // Authoritative restore from backend first (survives logout/relogin).
+    try {
+      final remotePresence = await _api.getWasherPresence();
+      final remoteOnline = remotePresence?['online'] == true;
+      if (remoteOnline) {
+        final latRaw = remotePresence?['lat'];
+        final lngRaw = remotePresence?['lng'];
+        final lat =
+            latRaw is num ? latRaw.toDouble() : double.tryParse('$latRaw');
+        final lng =
+            lngRaw is num ? lngRaw.toDouble() : double.tryParse('$lngRaw');
+        if (lat != null && lng != null && mounted) {
+          setState(() {
+            _washerLocation = LatLng(lat, lng);
+            _appendTrail(_washerTrail, _washerLocation!);
+          });
+          _followOnMap(_washerLocation!);
+        }
+        await _writePref(_onlinePrefKey, 'true');
+        await _writePref(_onlinePrefFallbackKey, 'true');
+        await _writePref(_explicitOfflinePrefKey, 'false');
+        await _writePref(_explicitOfflineFallbackKey, 'false');
+        await _toggleOnline(true, silent: true, fromAutoRestore: true);
+        return;
+      }
+    } catch (_) {
+      // Fall back to local preference restore.
+    }
+
     // Restore previous online state so biker stays online across app restarts.
     final savedPhoneScoped = await _readPref(_onlinePrefKey);
     final savedFallback = await _readPref(_onlinePrefFallbackKey);
+    final explicitOfflineScoped = await _readPref(_explicitOfflinePrefKey);
+    final explicitOfflineFallback =
+        await _readPref(_explicitOfflineFallbackKey);
+    final explicitOffline = (explicitOfflineScoped == 'true') ||
+        (explicitOfflineFallback == 'true');
     final savedOnline = (savedPhoneScoped == 'true') || (savedFallback == 'true');
-    if (savedOnline) {
+    // If biker did not explicitly switch offline, prefer restoring online.
+    if (savedOnline || !explicitOffline) {
       // Restore without clearing preference on transient startup failures.
       await _toggleOnline(true, silent: true, fromAutoRestore: true);
     }
@@ -407,6 +470,8 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
       } catch (_) {}
       await _writePref(_onlinePrefKey, 'false');
       await _writePref(_onlinePrefFallbackKey, 'false');
+      await _writePref(_explicitOfflinePrefKey, 'true');
+      await _writePref(_explicitOfflineFallbackKey, 'true');
       return;
     }
 
@@ -442,6 +507,8 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
       });
       await _writePref(_onlinePrefKey, 'true');
       await _writePref(_onlinePrefFallbackKey, 'true');
+      await _writePref(_explicitOfflinePrefKey, 'false');
+      await _writePref(_explicitOfflineFallbackKey, 'false');
       if (!mounted || silent) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('You are online')));
     } catch (e) {
@@ -451,10 +518,6 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
         setState(() => _online = false);
       }
       _presenceTimer?.cancel();
-      if (!fromAutoRestore) {
-        await _writePref(_onlinePrefKey, 'false');
-        await _writePref(_onlinePrefFallbackKey, 'false');
-      }
       if (!silent && !fromAutoRestore) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Go online failed: $e')));
       }
@@ -540,11 +603,16 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final mapUrl = isDark
+    final fallbackMapUrl = isDark
         ? (_highContrastMap
             ? _voyagerDarkMapUrlTemplate
             : _voyagerDarkSoftMapUrlTemplate)
         : (_highContrastMap ? _hotMapUrlTemplate : _voyagerMapUrlTemplate);
+    final gebetaMapTemplate =
+        _gebetaTileTemplate(isDark: isDark, highContrast: _highContrastMap);
+    final mapUrl =
+        _injectGebetaToken(gebetaMapTemplate ?? fallbackMapUrl);
+    final mapUsesSubdomains = mapUrl.contains('{s}');
     final ownerMarkers = <LatLng>[];
     for (final r in _requests) {
       if (r is Map) {
@@ -652,7 +720,8 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
                           children: [
                             TileLayer(
                               urlTemplate: mapUrl,
-                              subdomains: _mapSubdomains,
+                              subdomains:
+                                  mapUsesSubdomains ? _mapSubdomains : const [],
                               retinaMode: true,
                               userAgentPackageName: 'com.carwash.mobile',
                             ),

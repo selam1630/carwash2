@@ -182,6 +182,12 @@ export class WashController {
     return this.washService.updateWasherPresence(req.user, dto);
   }
 
+  @Get('washers/presence/me')
+  @Roles(UserRole.WASHER)
+  async myPresence(@Req() req: any) {
+    return this.washService.getWasherPresence(req.user);
+  }
+
   // Owner fetches nearby washers for map display (polling)
   @Get('washers/nearby')
   @Roles(UserRole.OWNER)

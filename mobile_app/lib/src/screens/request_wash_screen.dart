@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'dart:async';
@@ -19,6 +20,8 @@ class RequestWashScreen extends StatefulWidget {
 }
 
 class _RequestWashScreenState extends State<RequestWashScreen> {
+  static const String _gebetaDirectionsUrl =
+      'https://mapapi.gebeta.app/api/route/direction/';
   static const String _voyagerMapUrlTemplate =
       'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
   static const String _voyagerDarkMapUrlTemplate =
@@ -50,6 +53,97 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
   int? _etaMinutes;
   DateTime? _lastRouteFetchAt;
   bool _completionDialogOpen = false;
+
+  String? _gebetaTileTemplate({required bool isDark, required bool highContrast}) {
+    if (isDark) {
+      final dark = dotenv.env['FLUTTER_GEBETA_TILE_DARK_URL_TEMPLATE']?.trim();
+      if (dark != null && dark.isNotEmpty) return dark;
+    }
+    if (!isDark && !highContrast) {
+      final lightSoft =
+          dotenv.env['FLUTTER_GEBETA_TILE_LIGHT_SOFT_URL_TEMPLATE']?.trim();
+      if (lightSoft != null && lightSoft.isNotEmpty) return lightSoft;
+    }
+    final light = dotenv.env['FLUTTER_GEBETA_TILE_URL_TEMPLATE']?.trim();
+    if (light != null && light.isNotEmpty) return light;
+    return null;
+  }
+
+  String _injectGebetaToken(String template) {
+    final token = dotenv.env['FLUTTER_GEBETA_API_TOKEN']?.trim() ?? '';
+    if (token.isEmpty) return template;
+    return template.replaceAll('{apiKey}', token);
+  }
+
+  _ParsedRoute _extractRoute(dynamic payload) {
+    if (payload is! Map) {
+      return const _ParsedRoute(points: <LatLng>[], etaMinutes: null);
+    }
+
+    dynamic candidate;
+    if (payload['routes'] is List && (payload['routes'] as List).isNotEmpty) {
+      candidate = (payload['routes'] as List).first;
+    } else if (payload['route'] is Map) {
+      candidate = payload['route'];
+    } else if (payload['data'] is Map) {
+      final data = payload['data'];
+      if (data['routes'] is List && (data['routes'] as List).isNotEmpty) {
+        candidate = (data['routes'] as List).first;
+      } else if (data['route'] is Map) {
+        candidate = data['route'];
+      }
+    }
+
+    if (candidate is! Map) {
+      return const _ParsedRoute(points: <LatLng>[], etaMinutes: null);
+    }
+
+    final points = <LatLng>[];
+    dynamic coords;
+    final geometry = candidate['geometry'];
+    if (geometry is Map) {
+      coords = geometry['coordinates'] ?? geometry['paths'];
+    } else if (geometry is List) {
+      coords = geometry;
+    } else {
+      coords = candidate['coordinates'] ?? candidate['path'];
+    }
+
+    if (coords is List) {
+      for (final c in coords) {
+        if (c is List && c.length >= 2) {
+          final a = _asDouble(c[0]);
+          final b = _asDouble(c[1]);
+          if (a == null || b == null) continue;
+          // Most APIs return [lng, lat], but tolerate [lat, lng] too.
+          final looksLikeLngLat = a.abs() > 20 || b.abs() < 20;
+          final lat = looksLikeLngLat ? b : a;
+          final lng = looksLikeLngLat ? a : b;
+          points.add(LatLng(lat, lng));
+        } else if (c is Map) {
+          final lat = _asDouble(c['lat'] ?? c['latitude']);
+          final lng = _asDouble(c['lng'] ?? c['lon'] ?? c['longitude']);
+          if (lat != null && lng != null) {
+            points.add(LatLng(lat, lng));
+          }
+        }
+      }
+    }
+
+    final durationRaw = candidate['duration'] ??
+        candidate['durationInSec'] ??
+        candidate['durationInSeconds'] ??
+        payload['duration'];
+    int? etaMinutes;
+    final duration = _asDouble(durationRaw);
+    if (duration != null && duration > 0) {
+      // Gebeta docs sometimes use seconds; if small value, treat as minutes.
+      final minutes = duration > 180 ? (duration / 60) : duration;
+      etaMinutes = minutes.ceil();
+    }
+
+    return _ParsedRoute(points: points, etaMinutes: etaMinutes);
+  }
 
   @override
   void initState() {
@@ -455,37 +549,38 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
     }
     _lastRouteFetchAt = now;
 
+    final gebetaToken = dotenv.env['FLUTTER_GEBETA_API_TOKEN']?.trim() ?? '';
+
     try {
+      if (gebetaToken.isNotEmpty) {
+        final resp = await Dio().get(
+          _gebetaDirectionsUrl,
+          queryParameters: {
+            'origin': '{${owner.latitude},${owner.longitude}}',
+            'destination': '{${washer.latitude},${washer.longitude}}',
+            'apiKey': gebetaToken,
+          },
+        );
+        final parsed = _extractRoute(resp.data);
+        if (parsed.points.length > 1 && mounted) {
+          setState(() {
+            _routeToWasher = parsed.points;
+            _etaMinutes = parsed.etaMinutes;
+          });
+          return;
+        }
+      }
+
+      // Fallback route provider so map UX stays stable even if Gebeta response shape changes.
       final url = 'https://router.project-osrm.org/route/v1/driving/'
           '${owner.longitude},${owner.latitude};${washer.longitude},${washer.latitude}'
           '?overview=full&geometries=geojson';
       final resp = await Dio().get(url);
-      final data = resp.data;
-      if (data is! Map || data['routes'] is! List || (data['routes'] as List).isEmpty) {
-        return;
-      }
-      final route = (data['routes'] as List).first;
-      if (route is! Map) return;
-      final geometry = route['geometry'];
-      final durationRaw = route['duration'];
-      final coords = geometry is Map ? geometry['coordinates'] : null;
-      if (coords is! List) return;
-
-      final points = <LatLng>[];
-      for (final c in coords) {
-        if (c is List && c.length >= 2) {
-          final lng = _asDouble(c[0]);
-          final lat = _asDouble(c[1]);
-          if (lat != null && lng != null) points.add(LatLng(lat, lng));
-        }
-      }
+      final parsed = _extractRoute(resp.data);
       if (!mounted) return;
       setState(() {
-        _routeToWasher = points;
-        final durationSeconds = _asDouble(durationRaw);
-        if (durationSeconds != null && durationSeconds > 0) {
-          _etaMinutes = (durationSeconds / 60).ceil();
-        }
+        _routeToWasher = parsed.points;
+        _etaMinutes = parsed.etaMinutes;
       });
     } catch (_) {
       // Keep app responsive if routing service is unavailable.
@@ -610,11 +705,16 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final mapUrl = isDark
+    final fallbackMapUrl = isDark
         ? (_highContrastMap
             ? _voyagerDarkMapUrlTemplate
             : _voyagerDarkSoftMapUrlTemplate)
         : (_highContrastMap ? _hotMapUrlTemplate : _voyagerMapUrlTemplate);
+    final gebetaMapTemplate =
+        _gebetaTileTemplate(isDark: isDark, highContrast: _highContrastMap);
+    final mapUrl =
+        _injectGebetaToken(gebetaMapTemplate ?? fallbackMapUrl);
+    final mapUsesSubdomains = mapUrl.contains('{s}');
     final center = _mapCenter ?? _ownerLocation ?? LatLng(9.03, 38.74);
     final nearbyCount = _nearbyWashers.length;
     final markers = <Marker>[
@@ -680,7 +780,7 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
                   children: [
                     TileLayer(
                       urlTemplate: mapUrl,
-                      subdomains: _mapSubdomains,
+                      subdomains: mapUsesSubdomains ? _mapSubdomains : const [],
                       retinaMode: true,
                       userAgentPackageName: 'com.carwash.mobile',
                     ),
@@ -960,5 +1060,15 @@ class _NearbyWasher {
     required this.washerId,
     required this.lat,
     required this.lng,
+  });
+}
+
+class _ParsedRoute {
+  final List<LatLng> points;
+  final int? etaMinutes;
+
+  const _ParsedRoute({
+    required this.points,
+    required this.etaMinutes,
   });
 }

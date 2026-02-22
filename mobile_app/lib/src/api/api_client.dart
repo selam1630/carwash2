@@ -408,6 +408,23 @@ class ApiClient {
         data: {'lat': lat, 'lng': lng, 'online': online});
   }
 
+  Future<Map<String, dynamic>?> getWasherPresence() async {
+    try {
+      final resp = await dio.get('/wash/washers/presence/me');
+      final data = resp.data;
+      if (data == null) return null;
+      if (data is String && (data.trim().isEmpty || data.trim() == 'null')) {
+        return null;
+      }
+      final map = _asMap(data);
+      if (map.isEmpty) return null;
+      return map;
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 403) return null;
+      rethrow;
+    }
+  }
+
   Future<List<dynamic>> getNearbyWashers({
     required double lat,
     required double lng,
