@@ -76,6 +76,24 @@ export class AuthService {
     return { message: 'OTP sent' };
   }
 
+  private async sendOtpForRegistration(
+    phone: string,
+  ): Promise<{ message: string }> {
+    try {
+      await this.sendOtp({ phone });
+      return { message: 'OTP sent — verify to complete registration' };
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        `Registration created but OTP delivery failed for ${phone}: ${reason}`,
+      );
+      return {
+        message:
+          'Registration saved, but OTP delivery failed. Please tap resend OTP from login.',
+      };
+    }
+  }
+
   async verifyOtp(dto: VerifyOtpDto) {
     const { phone, otp } = dto;
     const key = `otp:${phone}`;
@@ -298,10 +316,10 @@ export class AuthService {
       throw err;
     }
 
-    await this.sendOtp({ phone });
+    const otpResult = await this.sendOtpForRegistration(phone);
 
     return {
-      message: 'Profile saved. OTP sent — verify to complete registration',
+      message: `Profile saved. ${otpResult.message}`,
     };
   }
 
@@ -362,11 +380,10 @@ export class AuthService {
       throw err;
     }
 
-    await this.sendOtp({ phone });
+    const otpResult = await this.sendOtpForRegistration(phone);
 
     return {
-      message:
-        'Sales person registered. OTP sent to phone — they must verify to activate.',
+      message: `Sales person registered. ${otpResult.message}`,
     };
   }
 
@@ -442,11 +459,10 @@ export class AuthService {
       throw err;
     }
 
-    await this.sendOtp({ phone });
+    const otpResult = await this.sendOtpForRegistration(phone);
 
     return {
-      message:
-        'Car washer registered. OTP sent to phone — they must verify to activate.',
+      message: `Car washer registered. ${otpResult.message}`,
     };
   }
 
@@ -535,10 +551,10 @@ export class AuthService {
       }),
     );
 
-    await this.sendOtp({ phone });
+    const otpResult = await this.sendOtpForRegistration(phone);
 
     return {
-      message: 'Owner registered. OTP sent — they must verify to activate. Commission recorded.',
+      message: `Owner registered. ${otpResult.message} Commission recorded.`,
     };
   }
 }
