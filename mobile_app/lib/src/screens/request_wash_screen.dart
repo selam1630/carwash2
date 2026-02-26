@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -43,7 +44,7 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
   String _status = 'Ready to request a wash';
   bool _loading = false;
   double _mapZoom = 15;
-  bool _highContrastMap = false;
+  bool _highContrastMap = true;
   bool _didInitialNearbyFocus = false;
   Timer? _nearbyTimer;
   StreamSubscription<Position>? _ownerPositionSub;
@@ -309,6 +310,16 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
           }
         }
       }
+      if (_ownerLocation != null && washers.isNotEmpty) {
+        final owner = _ownerLocation!;
+        washers.sort((a, b) {
+          final da = (owner.latitude - a.lat) * (owner.latitude - a.lat) +
+              (owner.longitude - a.lng) * (owner.longitude - a.lng);
+          final db = (owner.latitude - b.lat) * (owner.latitude - b.lat) +
+              (owner.longitude - b.lng) * (owner.longitude - b.lng);
+          return da.compareTo(db);
+        });
+      }
       if (!mounted) return;
       setState(() => _nearbyWashers = washers);
       _focusNearbyCluster();
@@ -318,6 +329,7 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
   }
 
   void _focusNearbyCluster({bool force = false}) {
+    final shouldMoveNow = !_didInitialNearbyFocus || force;
     if (_didInitialNearbyFocus && !force) return;
     if (_nearbyWashers.isEmpty) return;
 
@@ -373,6 +385,9 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
       _mapZoom = zoom;
       _didInitialNearbyFocus = true;
     });
+    if (shouldMoveNow) {
+      _moveMap(center, zoom);
+    }
   }
 
   Future<void> _resolveLocation() async {
@@ -583,6 +598,7 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
   }
 
   void _moveMap(LatLng center, double zoom) {
+    if (kIsWeb) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       try {
@@ -774,7 +790,11 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
         candidateMapUrl.contains('{y}');
     final mapUrl = hasRequiredPlaceholders ? candidateMapUrl : fallbackMapUrl;
     final mapUsesSubdomains = mapUrl.contains('{s}');
-    final center = _mapCenter ?? _ownerLocation ?? LatLng(9.03, 38.74);
+    final center = _mapCenter ??
+        ((_requestId == null && _nearbyWashers.isNotEmpty)
+            ? LatLng(_nearbyWashers.first.lat, _nearbyWashers.first.lng)
+            : _ownerLocation) ??
+        LatLng(9.03, 38.74);
     final nearbyCount = _nearbyWashers.length;
     final activeStatus = (_activeRequestStatus ?? '').toUpperCase();
     final canCancel =
