@@ -37,6 +37,19 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   }
 
   Future<void> _subscribe(String planId) async {
+    final role = (await _client.getStoredUserRole())?.toUpperCase();
+    if (role != 'OWNER') {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Subscription is only available for owner accounts. Current role: ${role ?? 'UNKNOWN'}',
+          ),
+        ),
+      );
+      return;
+    }
+
     setState(() => _loading = true);
     try {
       final init = await _client.initializePayment(planId);

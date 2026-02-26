@@ -28,9 +28,17 @@ export class LoggingInterceptor implements NestInterceptor {
             `${method} ${url} ${statusCode} - ${Date.now() - now}ms - ${ip}`,
           );
         },
-        error: () => {
+        error: (err: unknown) => {
+          const statusCode =
+            err && typeof err === 'object' && 'status' in err
+              ? String((err as { status?: number }).status ?? '')
+              : '';
+          const message =
+            err && typeof err === 'object' && 'message' in err
+              ? String((err as { message?: string }).message ?? '')
+              : '';
           this.logger.warn(
-            `${method} ${url} - ${Date.now() - now}ms - ${ip} - failed`,
+            `${method} ${url}${statusCode ? ` ${statusCode}` : ''} - ${Date.now() - now}ms - ${ip} - failed${message ? `: ${message}` : ''}`,
           );
         },
       }),

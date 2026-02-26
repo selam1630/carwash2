@@ -10,6 +10,7 @@ import { OwnerSubscription } from './entities/owner-subscription.entity';
 import { OwnerProfile } from '../users/entities/owner-profile.entity';
 import { CreatePlanDto } from './dto/create-plan.dto';
 import { UpdatePlanDto } from './dto/update-plan.dto';
+import { User, UserRole } from '../users/entities/user.entity';
 
 @Injectable()
 export class PlansService {
@@ -20,6 +21,8 @@ export class PlansService {
     private subRepo: Repository<OwnerSubscription>,
     @InjectRepository(OwnerProfile)
     private ownerRepo: Repository<OwnerProfile>,
+    @InjectRepository(User)
+    private userRepo: Repository<User>,
   ) {}
 
   /** Owner subscribes to a plan. Expires at end of current month. */
@@ -27,11 +30,7 @@ export class PlansService {
     const plan = await this.planRepo.findOne({ where: { id: planId } });
     if (!plan) throw new NotFoundException('Plan not found');
 
-    const owner = await this.ownerRepo.findOne({
-      where: { user: { id: ownerUserId } },
-      relations: ['user'],
-    });
-    if (!owner) throw new BadRequestException('Owner profile not found');
+    const owner = await this.ensureOwnerProfile(ownerUserId);
 
     // compute end of current month
     const now = new Date();
@@ -112,7 +111,11 @@ export class PlansService {
 
   async cancelSubscription(ownerUserId: string): Promise<{ message: string }> {
     const owner = await this.ownerRepo.findOne({ where: { user: { id: ownerUserId } } });
-    if (!owner) throw new BadRequestException('Owner profile not found');
+    if (!owner) {
+      throw new BadRequestException(
+        'Owner profile not found. Please login with an owner account and complete owner registration.',
+      );
+    }
     const now = new Date();
     const sub = await this.subRepo.findOne({ where: { ownerProfile: { id: owner.id }, expiresAt: MoreThan(now) } });
     if (!sub) return { message: 'No active subscription' };
@@ -164,5 +167,35 @@ export class PlansService {
     const washesPerMonth = Number(plan.washesPerMonth ?? 0);
     if (washesPerMonth <= 0) return true;
     return String(plan.name ?? '').toLowerCase().includes('unlimited');
+  }
+
+  private async ensureOwnerProfile(ownerUserId: string): Promise<OwnerProfile> {
+    const existing = await this.ownerRepo.findOne({
+      where: { user: { id: ownerUserId } },
+      relations: ['user'],
+    });
+    if (existing) return existing;
+
+    const user = await this.userRepo.findOne({ where: { id: ownerUserId } });
+    if (!user || user.role !== UserRole.OWNER) {
+      throw new BadRequestException(
+        'Owner profile not found. Please login with an owner account and complete owner registration.',
+      );
+    }
+
+    const phoneTail = String(user.phone ?? '').replace(/\D/g, '').slice(-6) || 'owner';
+    let plateNumber = `AUTO-${phoneTail}-${Date.now().toString(36).toUpperCase().slice(-4)}`;
+    while (await this.ownerRepo.findOne({ where: { plateNumber } })) {
+      plateNumber = `AUTO-${phoneTail}-${Date.now().toString(36).toUpperCase().slice(-4)}`;
+    }
+
+    const autoProfile = this.ownerRepo.create({
+      user,
+      fullName: `Owner ${phoneTail}`,
+      carType: 'Unknown',
+      plateNumber,
+      secondaryPhone: user.phone ?? null,
+    });
+    return this.ownerRepo.save(autoProfile);
   }
 }

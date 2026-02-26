@@ -10,12 +10,16 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PaymentsService } from './payments.service';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { UserRole } from '../users/entities/user.entity';
 
 @Controller('payments')
 export class PaymentsController {
   constructor(private readonly payments: PaymentsService) {}
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.OWNER)
   @Post('initialize/:planId')
   async initialize(@Req() req: any, @Param('planId') planId: string) {
     const user = req.user;
@@ -36,7 +40,8 @@ export class PaymentsController {
   }
 
   // frontend calls this after user completes payment and is redirected back
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.OWNER)
   @Get('verify')
   async verify(@Req() req: any, @Query('tx_ref') txRef: string, @Query('planId') planId: string) {
     const query = req?.query || {};
