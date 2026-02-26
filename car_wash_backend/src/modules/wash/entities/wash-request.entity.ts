@@ -10,6 +10,7 @@ import { User } from '../../users/entities/user.entity';
 export enum WashRequestStatus {
   REQUESTED = 'REQUESTED',
   ACCEPTED = 'ACCEPTED',
+  IN_PROGRESS = 'IN_PROGRESS',
   PENDING_OWNER_CONFIRMATION = 'PENDING_OWNER_CONFIRMATION',
   COMPLETED = 'COMPLETED',
   CANCELLED = 'CANCELLED',
@@ -54,6 +55,12 @@ export class WashRequest {
 
   @Column({ type: 'text', nullable: true })
   afterWashPhoto: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  beforeWashPhoto: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  washStartedAt: Date | null;
 
   @Column({ type: 'timestamp', nullable: true })
   washerSubmittedAt: Date | null;

@@ -49,6 +49,8 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
   List<LatLng> _washerTrail = [];
   List<LatLng> _ownerTrail = [];
   bool _submittingFinish = false;
+  bool _startingWash = false;
+  String? _activeRequestStatus;
   double _mapZoom = 15;
   bool _highContrastMap = true;
   final ImagePicker _picker = ImagePicker();
@@ -190,6 +192,25 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
       );
     });
 
+    _socket.listenRequestCancelled((event) {
+      final requestId = event['requestId']?.toString();
+      if (requestId == null || requestId.isEmpty) return;
+      if (!mounted) return;
+      if (_activeRequestId == requestId) {
+        setState(() {
+          _activeRequestId = null;
+          _activeRequestStatus = null;
+          _activeOwnerLocation = null;
+          _ownerTrail = [];
+          _washerTrail = [];
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Owner cancelled this request.')),
+        );
+      }
+      _load();
+    });
+
     _socket.listenOwnerLocation((event) {
       final requestId = event['requestId']?.toString();
       if (_activeRequestId == null ||
@@ -218,6 +239,17 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Waiting owner Yes/No confirmation...')),
         );
+      }
+    });
+
+    _socket.listenRequestStarted((event) {
+      final requestId = event['requestId']?.toString();
+      if (requestId == null || requestId.isEmpty) return;
+      if (!mounted) return;
+      if (_activeRequestId == requestId) {
+        setState(() {
+          _activeRequestStatus = (event['status'] ?? '').toString();
+        });
       }
     });
 
@@ -315,6 +347,7 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
       if (!mounted) return;
       setState(() {
         _activeRequestId = requestId;
+        _activeRequestStatus = (active['status'] ?? '').toString();
         if (lat != null && lng != null) {
           _activeOwnerLocation = LatLng(lat, lng);
           _appendTrail(_ownerTrail, _activeOwnerLocation!);
@@ -393,7 +426,7 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
     if (requestId.isEmpty) return;
     setState(() => _loading = true);
     try {
-      await _api.acceptWashRequest(requestId);
+      final accepted = await _api.acceptWashRequest(requestId);
       _socket.joinRequest(requestId);
       final latRaw = request['pickupLat'];
       final lngRaw = request['pickupLng'];
@@ -401,6 +434,7 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
       final lng = lngRaw is num ? lngRaw.toDouble() : double.tryParse('$lngRaw');
       setState(() {
         _activeRequestId = requestId;
+        _activeRequestStatus = (accepted['status'] ?? 'ACCEPTED').toString();
         _ownerTrail = [];
         _washerTrail = [];
         if (_washerLocation != null) {
@@ -441,7 +475,11 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
       final picked = await _picker.pickImage(source: ImageSource.camera, imageQuality: 80);
       if (picked == null) return;
       setState(() => _submittingFinish = true);
-      await _api.finishWashRequestWithPhoto(requestId: requestId, afterPhoto: picked);
+      final updated =
+          await _api.finishWashRequestWithPhoto(requestId: requestId, afterPhoto: picked);
+      setState(() {
+        _activeRequestStatus = (updated['status'] ?? '').toString();
+      });
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Photo submitted. Waiting for owner confirmation.')),
@@ -453,6 +491,36 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
       );
     } finally {
       if (mounted) setState(() => _submittingFinish = false);
+    }
+  }
+
+  Future<void> _startActiveRequestWithBeforePhoto() async {
+    final requestId = _activeRequestId;
+    if (requestId == null || requestId.isEmpty || _startingWash) return;
+
+    try {
+      final picked =
+          await _picker.pickImage(source: ImageSource.camera, imageQuality: 80);
+      if (picked == null) return;
+      setState(() => _startingWash = true);
+      final started = await _api.startWashRequestWithBeforePhoto(
+        requestId: requestId,
+        beforePhoto: picked,
+      );
+      if (!mounted) return;
+      setState(() {
+        _activeRequestStatus = (started['status'] ?? '').toString();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Wash started. You can now finish with after photo.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to start wash: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _startingWash = false);
     }
   }
 
@@ -629,6 +697,9 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
         _washerLocation ??
         _activeOwnerLocation ??
         (ownerMarkers.isNotEmpty ? ownerMarkers.first : LatLng(9.03, 38.74));
+    final currentStatus = (_activeRequestStatus ?? '').toUpperCase();
+    final canStartWash = _activeRequestId != null && currentStatus == 'ACCEPTED';
+    final canFinishWash = _activeRequestId != null && currentStatus == 'IN_PROGRESS';
 
     return Scaffold(
       appBar: AppBar(
@@ -974,7 +1045,25 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
                     children: [
                       Expanded(
                         child: ElevatedButton.icon(
-                          onPressed: (_activeRequestId == null || _submittingFinish)
+                          onPressed: (!canStartWash || _startingWash || _submittingFinish)
+                              ? null
+                              : _startActiveRequestWithBeforePhoto,
+                          icon: const Icon(Icons.play_circle_fill),
+                          label: Text(
+                            _startingWash
+                                ? 'Starting...'
+                                : (_activeRequestId == null
+                                    ? 'Accept a request first'
+                                    : (canStartWash
+                                        ? 'Start Wash (Before Photo)'
+                                        : 'Wash already started')),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: (!canFinishWash || _submittingFinish || _startingWash)
                               ? null
                               : _finishActiveRequestWithPhoto,
                           icon: const Icon(Icons.camera_alt),
@@ -983,7 +1072,9 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
                                 ? 'Submitting...'
                                 : (_activeRequestId == null
                                     ? 'Accept a request first'
-                                    : 'Finish Wash (Upload Photo)'),
+                                    : (canFinishWash
+                                        ? 'Finish Wash (After Photo)'
+                                        : 'Start wash first')),
                           ),
                         ),
                       ),

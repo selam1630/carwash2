@@ -144,6 +144,17 @@ class WashSocketService {
     });
   }
 
+  void listenRequestStarted(WashEventHandler onEvent) {
+    _socket?.off('request:started');
+    _socket?.on('request:started', (data) {
+      if (data is Map<String, dynamic>) {
+        onEvent(data);
+      } else if (data is Map) {
+        onEvent(Map<String, dynamic>.from(data));
+      }
+    });
+  }
+
   void listenCompletionRequested(WashEventHandler onEvent) {
     _socket?.off('request:completion-requested');
     _socket?.on('request:completion-requested', (data) {
@@ -158,6 +169,17 @@ class WashSocketService {
   void listenRequestReopened(WashEventHandler onEvent) {
     _socket?.off('request:reopened');
     _socket?.on('request:reopened', (data) {
+      if (data is Map<String, dynamic>) {
+        onEvent(data);
+      } else if (data is Map) {
+        onEvent(Map<String, dynamic>.from(data));
+      }
+    });
+  }
+
+  void listenRequestCancelled(WashEventHandler onEvent) {
+    _socket?.off('request:cancelled');
+    _socket?.on('request:cancelled', (data) {
       if (data is Map<String, dynamic>) {
         onEvent(data);
       } else if (data is Map) {

@@ -488,6 +488,21 @@ class ApiClient {
     return _asMap(resp.data);
   }
 
+  Future<Map<String, dynamic>> startWashRequestWithBeforePhoto({
+    required String requestId,
+    required XFile beforePhoto,
+  }) async {
+    final bytes = await beforePhoto.readAsBytes();
+    final form = FormData.fromMap({
+      'beforePhoto': MultipartFile.fromBytes(
+        bytes,
+        filename: beforePhoto.name.isNotEmpty ? beforePhoto.name : 'before.jpg',
+      ),
+    });
+    final resp = await dio.post('/wash/requests/$requestId/start', data: form);
+    return _asMap(resp.data);
+  }
+
   Future<Map<String, dynamic>> ownerConfirmCompletion({
     required String requestId,
     required bool approved,
@@ -496,6 +511,11 @@ class ApiClient {
       '/wash/requests/$requestId/owner-confirm',
       data: {'approved': approved},
     );
+    return _asMap(resp.data);
+  }
+
+  Future<Map<String, dynamic>> cancelWashRequest(String requestId) async {
+    final resp = await dio.post('/wash/requests/$requestId/cancel');
     return _asMap(resp.data);
   }
 

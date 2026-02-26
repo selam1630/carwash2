@@ -80,6 +80,42 @@ export class WashController {
     return { ok: true };
   }
 
+  @Post('requests/:id/start')
+  @Roles(UserRole.WASHER)
+  @UseInterceptors(
+    FileInterceptor('beforePhoto', {
+      storage: diskStorage({
+        destination: (_req, _file, cb) => {
+          const dir = join(process.cwd(), 'uploads/wash');
+          if (!existsSync(dir)) {
+            mkdirSync(dir, { recursive: true });
+          }
+          cb(null, dir);
+        },
+        filename: (_req, file, cb) => {
+          const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+          cb(null, `before-${unique}${extname(file.originalname)}`);
+        },
+      }),
+    }),
+  )
+  async startByWasher(
+    @Req() req: any,
+    @Param('id') requestId: string,
+    @UploadedFile() beforePhoto?: Express.Multer.File,
+  ) {
+    if (!beforePhoto?.path) {
+      throw new BadRequestException('beforePhoto is required');
+    }
+    const started = await this.washService.startByWasher(
+      req.user,
+      requestId,
+      beforePhoto.path,
+    );
+    this.washGateway.emitRequestStarted(started);
+    return started;
+  }
+
   @Post('requests/:id/finish')
   @Roles(UserRole.WASHER)
   @UseInterceptors(
@@ -122,6 +158,14 @@ export class WashController {
     const completed = await this.washService.completeByOwner(req.user, requestId);
     this.washGateway.emitRequestCompleted(completed);
     return completed;
+  }
+
+  @Post('requests/:id/cancel')
+  @Roles(UserRole.OWNER)
+  async cancelByOwner(@Req() req: any, @Param('id') requestId: string) {
+    const cancelled = await this.washService.cancelByOwner(req.user, requestId);
+    this.washGateway.emitRequestCancelled(cancelled);
+    return cancelled;
   }
 
   @Post('requests/:id/owner-confirm')

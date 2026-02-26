@@ -48,6 +48,7 @@ export class WashService {
       where: [
         { ownerId, status: WashRequestStatus.REQUESTED },
         { ownerId, status: WashRequestStatus.ACCEPTED },
+        { ownerId, status: WashRequestStatus.IN_PROGRESS },
         { ownerId, status: WashRequestStatus.PENDING_OWNER_CONFIRMATION },
       ],
       order: { createdAt: 'DESC' },
@@ -72,6 +73,8 @@ export class WashService {
       washerLat: null,
       washerLng: null,
       washerLocationUpdatedAt: null,
+      beforeWashPhoto: null,
+      washStartedAt: null,
     });
 
     return this.washRepo.save(request);
@@ -134,6 +137,7 @@ export class WashService {
       where: [
         { ownerId, status: WashRequestStatus.REQUESTED },
         { ownerId, status: WashRequestStatus.ACCEPTED },
+        { ownerId, status: WashRequestStatus.IN_PROGRESS },
         { ownerId, status: WashRequestStatus.PENDING_OWNER_CONFIRMATION },
       ],
       order: { createdAt: 'DESC' },
@@ -147,6 +151,7 @@ export class WashService {
     return this.washRepo.findOne({
       where: [
         { washerId, status: WashRequestStatus.ACCEPTED },
+        { washerId, status: WashRequestStatus.IN_PROGRESS },
         { washerId, status: WashRequestStatus.PENDING_OWNER_CONFIRMATION },
       ],
       order: { createdAt: 'DESC' },
@@ -168,8 +173,38 @@ export class WashService {
     request.status = WashRequestStatus.ACCEPTED;
     request.washerId = washerId;
     request.washer = await this.usersRepo.findOne({ where: { id: washerId } });
+    request.beforeWashPhoto = null;
+    request.washStartedAt = null;
+    request.afterWashPhoto = null;
+    request.washerSubmittedAt = null;
     request.updatedAt = new Date();
 
+    return this.washRepo.save(request);
+  }
+
+  async startByWasher(
+    washerUser: AuthUser,
+    requestId: string,
+    beforeWashPhotoPath: string,
+  ) {
+    await this.ensureWasher(washerUser);
+    const washerId = this.getUserId(washerUser);
+
+    const request = await this.washRepo.findOne({ where: { id: requestId } });
+    if (!request) {
+      throw new NotFoundException('Wash request not found');
+    }
+    if (request.washerId !== washerId) {
+      throw new ForbiddenException('You are not assigned to this request');
+    }
+    if (request.status !== WashRequestStatus.ACCEPTED) {
+      throw new BadRequestException('Only accepted requests can be started');
+    }
+
+    request.status = WashRequestStatus.IN_PROGRESS;
+    request.beforeWashPhoto = beforeWashPhotoPath;
+    request.washStartedAt = new Date();
+    request.updatedAt = new Date();
     return this.washRepo.save(request);
   }
 
@@ -195,6 +230,39 @@ export class WashService {
     return this.washRepo.save(request);
   }
 
+  async cancelByOwner(ownerUser: AuthUser, requestId: string) {
+    await this.ensureOwner(ownerUser);
+    const ownerId = this.getUserId(ownerUser);
+
+    const request = await this.washRepo.findOne({ where: { id: requestId } });
+    if (!request) {
+      throw new NotFoundException('Wash request not found');
+    }
+    if (request.ownerId !== ownerId) {
+      throw new ForbiddenException('You can cancel only your own request');
+    }
+    if (request.status === WashRequestStatus.CANCELLED) {
+      return request;
+    }
+    if (request.status === WashRequestStatus.COMPLETED) {
+      throw new BadRequestException('Completed request cannot be cancelled');
+    }
+    if (
+      request.status === WashRequestStatus.IN_PROGRESS ||
+      request.status === WashRequestStatus.PENDING_OWNER_CONFIRMATION ||
+      request.beforeWashPhoto != null ||
+      request.washStartedAt != null
+    ) {
+      throw new BadRequestException(
+        'Cannot cancel after wash has started (before photo already submitted).',
+      );
+    }
+
+    request.status = WashRequestStatus.CANCELLED;
+    request.updatedAt = new Date();
+    return this.washRepo.save(request);
+  }
+
   async submitCompletionByWasher(
     washerUser: AuthUser,
     requestId: string,
@@ -210,8 +278,15 @@ export class WashService {
     if (request.washerId !== washerId) {
       throw new ForbiddenException('You are not assigned to this request');
     }
-    if (request.status !== WashRequestStatus.ACCEPTED) {
-      throw new BadRequestException('Only accepted requests can be submitted for owner confirmation');
+    if (request.status !== WashRequestStatus.IN_PROGRESS) {
+      throw new BadRequestException(
+        'Only in-progress requests can be submitted for owner confirmation',
+      );
+    }
+    if (!request.beforeWashPhoto || !request.washStartedAt) {
+      throw new BadRequestException(
+        'Before-wash photo is required. Start the wash first.',
+      );
     }
 
     request.status = WashRequestStatus.PENDING_OWNER_CONFIRMATION;
@@ -255,6 +330,8 @@ export class WashService {
     request.washerLat = null;
     request.washerLng = null;
     request.washerLocationUpdatedAt = null;
+    request.beforeWashPhoto = null;
+    request.washStartedAt = null;
     request.reopenedCount = (request.reopenedCount ?? 0) + 1;
     request.lastReopenedAt = new Date();
     request.updatedAt = new Date();
@@ -276,7 +353,10 @@ export class WashService {
     if (request.washerId !== washerId) {
       throw new ForbiddenException('You are not assigned to this request');
     }
-    if (request.status !== WashRequestStatus.ACCEPTED) {
+    if (
+      request.status !== WashRequestStatus.ACCEPTED &&
+      request.status !== WashRequestStatus.IN_PROGRESS
+    ) {
       throw new BadRequestException('Request is not active');
     }
 
@@ -491,6 +571,44 @@ export class WashService {
     return onlineIds;
   }
 
+  async getNearbyOnlineWasherIdsOrderedByDistance(
+    lat: number,
+    lng: number,
+    radiusKm = 5,
+  ) {
+    // GEORADIUS key lng lat radius km WITHDIST ASC
+    const results = (await this.redis.georadius(
+      this.washersGeoKey,
+      lng,
+      lat,
+      radiusKm,
+      'km',
+      'WITHDIST',
+      'ASC',
+    )) as Array<[string, string]>;
+
+    const onlineIds: string[] = [];
+    for (const row of results) {
+      const washerId = row?.[0];
+      if (!washerId) continue;
+      const meta = await this.redis.get(`wash:washer:${washerId}:presence`);
+      if (meta) {
+        onlineIds.push(washerId);
+      } else {
+        await this.redis.zrem(this.washersGeoKey, washerId);
+      }
+    }
+    return onlineIds;
+  }
+
+  async isRequestStillRequested(requestId: string) {
+    const request = await this.washRepo.findOne({
+      where: { id: requestId },
+      select: ['id', 'status'],
+    });
+    return request?.status === WashRequestStatus.REQUESTED;
+  }
+
   async getAdminOperationsDashboard(requester: AuthUser) {
     const role = String(requester.role).toUpperCase();
     if (role !== UserRole.ADMIN) {
@@ -499,7 +617,11 @@ export class WashService {
 
     const activeWashRequests = await this.washRepo.find({
       where: {
-        status: In([WashRequestStatus.REQUESTED, WashRequestStatus.ACCEPTED]),
+        status: In([
+          WashRequestStatus.REQUESTED,
+          WashRequestStatus.ACCEPTED,
+          WashRequestStatus.IN_PROGRESS,
+        ]),
       },
       order: { createdAt: 'DESC' },
       take: 100,

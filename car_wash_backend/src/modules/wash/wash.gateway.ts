@@ -42,6 +42,11 @@ type OwnerLocationPayload = {
 })
 export class WashGateway implements OnGatewayConnection {
   private readonly logger = new Logger(WashGateway.name);
+  private readonly sequentialAssignDelayMs = 30_000;
+  private readonly sequentialAssignments = new Map<
+    string,
+    { washerIds: string[]; nextIndex: number; ownerId: string; timer?: NodeJS.Timeout }
+  >();
 
   @WebSocketServer()
   server: Server;
@@ -139,6 +144,8 @@ export class WashGateway implements OnGatewayConnection {
   }
 
   async emitRequestCreated(request: WashRequest) {
+    this.clearSequentialAssignment(request.id);
+
     const payload = {
       requestId: request.id,
       ownerId: request.ownerId,
@@ -148,21 +155,29 @@ export class WashGateway implements OnGatewayConnection {
       createdAt: request.createdAt,
     };
 
-    const nearbyWasherIds = await this.washService.getNearbyOnlineWasherIds(
+    const nearbyWasherIds = await this.washService.getNearbyOnlineWasherIdsOrderedByDistance(
       request.pickupLat,
       request.pickupLng,
       5,
     );
 
-    for (const washerId of nearbyWasherIds) {
-      this.server.to(this.userRoom(washerId)).emit('request:created', payload);
-    }
-
     // Keep owner informed too.
     this.server.to(this.userRoom(request.ownerId)).emit('request:created', payload);
+
+    if (!nearbyWasherIds.length) {
+      return;
+    }
+
+    this.sequentialAssignments.set(request.id, {
+      washerIds: nearbyWasherIds,
+      nextIndex: 0,
+      ownerId: request.ownerId,
+    });
+    await this.dispatchNextWasher(request.id, payload);
   }
 
   emitRequestAccepted(request: WashRequest) {
+    this.clearSequentialAssignment(request.id);
     const payload = {
       requestId: request.id,
       ownerId: request.ownerId,
@@ -174,6 +189,22 @@ export class WashGateway implements OnGatewayConnection {
       this.server.to(this.userRoom(request.washerId)).emit('request:accepted', payload);
     }
     this.server.to(this.requestRoom(request.id)).emit('request:accepted', payload);
+  }
+
+  emitRequestStarted(request: WashRequest) {
+    const payload = {
+      requestId: request.id,
+      ownerId: request.ownerId,
+      washerId: request.washerId,
+      status: request.status,
+      beforeWashPhoto: request.beforeWashPhoto,
+      washStartedAt: request.washStartedAt,
+    };
+    this.server.to(this.userRoom(request.ownerId)).emit('request:started', payload);
+    if (request.washerId) {
+      this.server.to(this.userRoom(request.washerId)).emit('request:started', payload);
+    }
+    this.server.to(this.requestRoom(request.id)).emit('request:started', payload);
   }
 
   emitCompletionRequested(request: WashRequest) {
@@ -193,6 +224,7 @@ export class WashGateway implements OnGatewayConnection {
   }
 
   emitRequestCompleted(request: WashRequest) {
+    this.clearSequentialAssignment(request.id);
     const payload = {
       requestId: request.id,
       ownerId: request.ownerId,
@@ -207,7 +239,23 @@ export class WashGateway implements OnGatewayConnection {
     this.server.to(this.requestRoom(request.id)).emit('request:completed', payload);
   }
 
+  emitRequestCancelled(request: WashRequest) {
+    this.clearSequentialAssignment(request.id);
+    const payload = {
+      requestId: request.id,
+      ownerId: request.ownerId,
+      washerId: request.washerId,
+      status: request.status,
+    };
+    this.server.to(this.userRoom(request.ownerId)).emit('request:cancelled', payload);
+    if (request.washerId) {
+      this.server.to(this.userRoom(request.washerId)).emit('request:cancelled', payload);
+    }
+    this.server.to(this.requestRoom(request.id)).emit('request:cancelled', payload);
+  }
+
   async emitRequestReopened(request: WashRequest) {
+    this.clearSequentialAssignment(request.id);
     const payload = {
       requestId: request.id,
       ownerId: request.ownerId,
@@ -252,5 +300,48 @@ export class WashGateway implements OnGatewayConnection {
     }
 
     return null;
+  }
+
+  private async dispatchNextWasher(requestId: string, payload: any) {
+    const state = this.sequentialAssignments.get(requestId);
+    if (!state) return;
+
+    const isStillRequested = await this.washService.isRequestStillRequested(requestId);
+    if (!isStillRequested) {
+      this.clearSequentialAssignment(requestId);
+      return;
+    }
+
+    if (state.nextIndex >= state.washerIds.length) {
+      this.server.to(this.userRoom(state.ownerId)).emit('request:no-washer-accepted', {
+        requestId,
+        status: 'NO_WASHER_ACCEPTED',
+      });
+      this.clearSequentialAssignment(requestId);
+      return;
+    }
+
+    const washerId = state.washerIds[state.nextIndex];
+    this.server.to(this.userRoom(washerId)).emit('request:created', payload);
+    state.nextIndex += 1;
+
+    if (state.timer) {
+      clearTimeout(state.timer);
+    }
+    state.timer = setTimeout(() => {
+      this.dispatchNextWasher(requestId, payload).catch((err) => {
+        this.logger.warn(
+          `Sequential dispatch failed for request ${requestId}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
+    }, this.sequentialAssignDelayMs);
+  }
+
+  private clearSequentialAssignment(requestId: string) {
+    const state = this.sequentialAssignments.get(requestId);
+    if (state?.timer) {
+      clearTimeout(state.timer);
+    }
+    this.sequentialAssignments.delete(requestId);
   }
 }

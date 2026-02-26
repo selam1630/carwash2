@@ -28,8 +28,6 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
       'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
   static const String _voyagerDarkSoftMapUrlTemplate =
       'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png';
-  static const String _hotMapUrlTemplate =
-      'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png';
   static const List<String> _mapSubdomains = ['a', 'b', 'c'];
   final ApiClient _api = ApiClient();
   final WashSocketService _socket = WashSocketService();
@@ -40,10 +38,12 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
   LatLng? _mapCenter;
   List<_NearbyWasher> _nearbyWashers = [];
   String? _requestId;
+  String? _activeRequestStatus;
+  bool _activeHasBeforePhoto = false;
   String _status = 'Ready to request a wash';
   bool _loading = false;
   double _mapZoom = 15;
-  bool _highContrastMap = true;
+  bool _highContrastMap = false;
   bool _didInitialNearbyFocus = false;
   Timer? _nearbyTimer;
   StreamSubscription<Position>? _ownerPositionSub;
@@ -171,9 +171,19 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
       }
       setState(() {
         _status = 'Car washer accepted your request';
+        _activeRequestStatus = 'ACCEPTED';
         if (acceptedLocation != null) {
           _washerLocation = acceptedLocation;
         }
+      });
+    });
+
+    _socket.listenRequestStarted((event) {
+      if (_requestId == null || event['requestId'] != _requestId) return;
+      setState(() {
+        _activeRequestStatus = (event['status'] ?? 'IN_PROGRESS').toString();
+        _activeHasBeforePhoto = true;
+        _status = 'Wash started. You can no longer cancel this request.';
       });
     });
 
@@ -206,6 +216,8 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
       setState(() {
         _status = 'Wash completed and confirmed';
         _requestId = null;
+        _activeRequestStatus = null;
+        _activeHasBeforePhoto = false;
         _routeToWasher = [];
         _etaMinutes = null;
       });
@@ -222,6 +234,8 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
       setState(() {
         _status =
             'You marked it as not finished. Reassigning nearest washer...';
+        _activeRequestStatus = 'REQUESTED';
+        _activeHasBeforePhoto = false;
         _washerLocation = null;
         _washerTrail = [];
         _routeToWasher = [];
@@ -237,9 +251,14 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
       final active = await _api.getActiveWashRequest();
       if (active != null && active['id'] != null) {
         final activeId = active['id'].toString();
+        final activeStatus = (active['status'] ?? '').toString();
+        final beforePhoto = active['beforeWashPhoto'];
         setState(() {
           _requestId = activeId;
           _status = 'You have an active wash request';
+          _activeRequestStatus = activeStatus;
+          _activeHasBeforePhoto =
+              beforePhoto != null && beforePhoto.toString().trim().isNotEmpty;
         });
         _socket.joinRequest(activeId);
 
@@ -292,11 +311,7 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
       }
       if (!mounted) return;
       setState(() => _nearbyWashers = washers);
-      if (_requestId == null && _nearbyWashers.isNotEmpty) {
-        _focusNearbyCluster(force: true);
-      } else {
-        _focusNearbyCluster();
-      }
+      _focusNearbyCluster();
     } catch (_) {
       // ignore polling errors
     }
@@ -358,7 +373,6 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
       _mapZoom = zoom;
       _didInitialNearbyFocus = true;
     });
-    _moveMap(center, zoom);
   }
 
   Future<void> _resolveLocation() async {
@@ -446,6 +460,8 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
       );
       setState(() {
         _requestId = createdId;
+        _activeRequestStatus = 'REQUESTED';
+        _activeHasBeforePhoto = false;
         _status = 'Request sent. Looking for the nearest washer...';
       });
     } catch (e) {
@@ -498,6 +514,45 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
       setState(() => _status = message);
     } finally {
       setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _cancelRequest() async {
+    final requestId = _requestId;
+    if (requestId == null || requestId.isEmpty) return;
+
+    setState(() => _loading = true);
+    try {
+      await _api.cancelWashRequest(requestId);
+      if (!mounted) return;
+      setState(() {
+        _requestId = null;
+        _activeRequestStatus = null;
+        _activeHasBeforePhoto = false;
+        _washerLocation = null;
+        _washerTrail = [];
+        _routeToWasher = [];
+        _etaMinutes = null;
+        _status = 'Request cancelled';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Request cancelled successfully.')),
+      );
+    } catch (e) {
+      String message = '$e';
+      if (e is DioException) {
+        final data = e.response?.data;
+        if (data is Map && data['message'] != null) {
+          final m = data['message'];
+          message = m is List ? m.join(', ') : m.toString();
+        }
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Cancel failed: $message')),
+      );
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -709,14 +764,22 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
         ? (_highContrastMap
             ? _voyagerDarkMapUrlTemplate
             : _voyagerDarkSoftMapUrlTemplate)
-        : (_highContrastMap ? _hotMapUrlTemplate : _voyagerMapUrlTemplate);
+        : _voyagerMapUrlTemplate;
     final gebetaMapTemplate =
         _gebetaTileTemplate(isDark: isDark, highContrast: _highContrastMap);
-    final mapUrl =
+    final candidateMapUrl =
         _injectGebetaToken(gebetaMapTemplate ?? fallbackMapUrl);
+    final hasRequiredPlaceholders = candidateMapUrl.contains('{z}') &&
+        candidateMapUrl.contains('{x}') &&
+        candidateMapUrl.contains('{y}');
+    final mapUrl = hasRequiredPlaceholders ? candidateMapUrl : fallbackMapUrl;
     final mapUsesSubdomains = mapUrl.contains('{s}');
     final center = _mapCenter ?? _ownerLocation ?? LatLng(9.03, 38.74);
     final nearbyCount = _nearbyWashers.length;
+    final activeStatus = (_activeRequestStatus ?? '').toUpperCase();
+    final canCancel =
+        _requestId != null &&
+        !(_activeHasBeforePhoto || activeStatus == 'IN_PROGRESS');
     final markers = <Marker>[
       if (_ownerLocation != null)
         Marker(
@@ -1030,17 +1093,30 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
                 const SizedBox(height: 4),
                 Text('Nearby washers: $nearbyCount'),
                 const SizedBox(height: 10),
-                ElevatedButton(
-                  onPressed: _loading ? null : _requestWash,
-                  child: _loading
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Text(_requestId == null
-                          ? 'Request Wash'
-                          : 'Request Active'),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: _loading || _requestId != null ? null : _requestWash,
+                        child: _loading
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : Text(_requestId == null
+                                ? 'Request Wash'
+                                : 'Request Active'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: _loading || !canCancel ? null : _cancelRequest,
+                        child: const Text('Cancel Request'),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
