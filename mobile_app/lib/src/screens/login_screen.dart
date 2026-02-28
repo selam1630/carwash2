@@ -39,6 +39,10 @@ class _LoginScreenState extends State<LoginScreen> {
         Navigator.pushReplacementNamed(context, '/sales/register-owners');
         return;
       }
+      if (role == 'ADMIN') {
+        Navigator.pushReplacementNamed(context, '/admin/sales');
+        return;
+      }
       if (role == 'OWNER') {
         final subStatus = await client.getMySubscriptionStatus();
         final hasSub = subStatus['active'] == true;
@@ -84,6 +88,8 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       } else if (roleUpper == 'SALES') {
         Navigator.pushReplacementNamed(context, '/sales/register-owners');
+      } else if (roleUpper == 'ADMIN') {
+        Navigator.pushReplacementNamed(context, '/admin/sales');
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

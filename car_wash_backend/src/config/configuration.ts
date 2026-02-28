@@ -23,5 +23,14 @@ export default () => ({
   },
   commission:{
     amountPerOwner:parseFloat(process.env.COMMISSION_PER_OWNER || '0.0'),
+    amountPerOwnerDirect: parseFloat(
+      process.env.COMMISSION_PER_OWNER_DIRECT || '0.0',
+    ),
+    amountPerOwnerRecruiter: parseFloat(
+      process.env.COMMISSION_PER_OWNER_RECRUITER || '0.0',
+    ),
+    amountPerRecruitedSales: parseFloat(
+      process.env.COMMISSION_PER_RECRUITED_SALES || '0.0',
+    ),
   }
 });

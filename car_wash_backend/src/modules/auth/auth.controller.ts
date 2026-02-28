@@ -112,6 +112,17 @@ export class AuthController {
     return this.authService.registerSales(req.user, dto);
   }
 
+  /** Sales-only: register another sales person. Recruiter sales earns referral commission when recruit registers owners. */
+  @Post('sales/register-sales')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SALES)
+  registerSalesBySales(
+    @Req() req: { user: JwtPayload },
+    @Body() dto: RegisterSalesDto,
+  ) {
+    return this.authService.registerSales(req.user, dto);
+  }
+
   /** Admin-only: register a car washer. Sends OTP to their phone; they verify to activate. */
   @Post('admin/register-washer')
   @UseGuards(JwtAuthGuard, RolesGuard)

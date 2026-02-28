@@ -22,6 +22,13 @@ class _SalesOwnerRegistrationScreenState
   final _plateNumber = TextEditingController();
   final _phone = TextEditingController();
   final _secondaryPhone = TextEditingController();
+  final _salesPhone = TextEditingController();
+  final _salesFullName = TextEditingController();
+  final _salesNationalId = TextEditingController();
+  final _salesSponsorNationalId = TextEditingController();
+  final _salesBankName = TextEditingController();
+  final _salesBankAccount = TextEditingController();
+  final _salesBankAccountName = TextEditingController();
 
   final ApiClient _client = ApiClient();
   final ImagePicker _picker = ImagePicker();
@@ -30,6 +37,7 @@ class _SalesOwnerRegistrationScreenState
   XFile? _carBack;
   XFile? _driverLicense;
   bool _loading = false;
+  bool _loadingSalesRegistration = false;
   bool _loadingCommissions = false;
 
   List<dynamic> _commissions = [];
@@ -40,6 +48,23 @@ class _SalesOwnerRegistrationScreenState
   void initState() {
     super.initState();
     _loadCommissions();
+  }
+
+  @override
+  void dispose() {
+    _fullName.dispose();
+    _carType.dispose();
+    _plateNumber.dispose();
+    _phone.dispose();
+    _secondaryPhone.dispose();
+    _salesPhone.dispose();
+    _salesFullName.dispose();
+    _salesNationalId.dispose();
+    _salesSponsorNationalId.dispose();
+    _salesBankName.dispose();
+    _salesBankAccount.dispose();
+    _salesBankAccountName.dispose();
+    super.dispose();
   }
 
   Future<void> _pick(String field) async {
@@ -155,6 +180,76 @@ class _SalesOwnerRegistrationScreenState
     }
   }
 
+  Future<void> _submitSalesRegistration() async {
+    final phone = _salesPhone.text.trim();
+    final fullName = _salesFullName.text.trim();
+    final nationalId = _salesNationalId.text.trim();
+    final sponsorNationalId = _salesSponsorNationalId.text.trim();
+    final bankName = _salesBankName.text.trim();
+    final bankAccount = _salesBankAccount.text.trim();
+    final bankAccountName = _salesBankAccountName.text.trim();
+
+    if (phone.isEmpty ||
+        fullName.isEmpty ||
+        nationalId.isEmpty ||
+        sponsorNationalId.isEmpty ||
+        bankName.isEmpty ||
+        bankAccount.isEmpty ||
+        bankAccountName.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please fill all sales fields')),
+      );
+      return;
+    }
+
+    setState(() => _loadingSalesRegistration = true);
+    try {
+      final res = await _client.registerSalesBySales(
+        phone: phone,
+        fullName: fullName,
+        nationalId: nationalId,
+        sponsorNationalId: sponsorNationalId,
+        bankDetails: {
+          'bankName': bankName,
+          'accountNumber': bankAccount,
+          'accountName': bankAccountName,
+        },
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            res['message']?.toString() ?? 'Sales person registered',
+          ),
+        ),
+      );
+      _salesPhone.clear();
+      _salesFullName.clear();
+      _salesNationalId.clear();
+      _salesSponsorNationalId.clear();
+      _salesBankName.clear();
+      _salesBankAccount.clear();
+      _salesBankAccountName.clear();
+    } catch (e) {
+      String message = '$e';
+      if (e is DioException) {
+        final data = e.response?.data;
+        if (data is Map && data['message'] != null) {
+          final m = data['message'];
+          message = m is List ? m.join(', ') : m.toString();
+        } else if (data != null) {
+          message = data.toString();
+        }
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Sales registration failed: $message')),
+      );
+    } finally {
+      if (mounted) setState(() => _loadingSalesRegistration = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -182,6 +277,65 @@ class _SalesOwnerRegistrationScreenState
                   children: [
                     Text('Registered users: $_registeredCount'),
                     Text('Commission total: $_commissionTotal'),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Register Sales (Referral)'),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _salesPhone,
+                      decoration: const InputDecoration(
+                        labelText: 'Sales phone (+2519XXXXXXXX)',
+                      ),
+                    ),
+                    TextField(
+                      controller: _salesFullName,
+                      decoration:
+                          const InputDecoration(labelText: 'Sales full name'),
+                    ),
+                    TextField(
+                      controller: _salesNationalId,
+                      decoration:
+                          const InputDecoration(labelText: 'Sales national ID'),
+                    ),
+                    TextField(
+                      controller: _salesSponsorNationalId,
+                      decoration: const InputDecoration(
+                        labelText: 'Sponsor national ID',
+                      ),
+                    ),
+                    TextField(
+                      controller: _salesBankName,
+                      decoration:
+                          const InputDecoration(labelText: 'Bank name'),
+                    ),
+                    TextField(
+                      controller: _salesBankAccount,
+                      decoration: const InputDecoration(
+                        labelText: 'Bank account number',
+                      ),
+                    ),
+                    TextField(
+                      controller: _salesBankAccountName,
+                      decoration: const InputDecoration(
+                        labelText: 'Bank account name',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _loadingSalesRegistration
+                        ? const Center(child: CircularProgressIndicator())
+                        : ElevatedButton(
+                            onPressed: _submitSalesRegistration,
+                            child: const Text('Register Sales (Sales)'),
+                          ),
                   ],
                 ),
               ),

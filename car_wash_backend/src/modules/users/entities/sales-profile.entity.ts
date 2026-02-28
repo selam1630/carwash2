@@ -4,6 +4,8 @@ import {
   Column,
   OneToOne,
   JoinColumn,
+  ManyToOne,
+  OneToMany,
 } from 'typeorm';
 import { User } from './user.entity';
 
@@ -33,6 +35,16 @@ export class SalesProfile {
 
   @Column({ nullable: true })
   sponsorNationalIdPhoto: string;
+
+  @ManyToOne(() => SalesProfile, (sales) => sales.recruitedSales, {
+    nullable: true,
+    onDelete: 'SET NULL',
+  })
+  @JoinColumn({ name: 'recruitedBySalesId' })
+  recruitedBySales: SalesProfile | null;
+
+  @OneToMany(() => SalesProfile, (sales) => sales.recruitedBySales)
+  recruitedSales: SalesProfile[];
 
   @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   createdAt: Date;

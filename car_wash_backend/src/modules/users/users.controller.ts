@@ -97,6 +97,12 @@ export class UsersController {
     return this.usersService.getSalesMonthlyCommissions(req.user, year, month);
   }
 
+  @Get('admin/sales/tree')
+  @Roles(UserRole.ADMIN)
+  getSalesTree(@Req() req: { user: JwtPayload }) {
+    return this.usersService.getSalesTree(req.user);
+  }
+
   @Post('admin/sales/:salesUserId/approve-monthly-commissions')
   @Roles(UserRole.ADMIN)
   approveSalesMonthlyCommissions(

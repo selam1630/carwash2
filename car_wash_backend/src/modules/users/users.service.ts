@@ -16,16 +16,31 @@ import { UpdateSalesProfileDto } from './dto/update-sales-profile.dto';
 import { UpdateWasherProfileDto } from './dto/update-washer-profile.dto';
 import { SalesCommission } from './entities/sales-commission.entity';
 import { CommissionStatus } from './entities/sales-commission.entity';
+import { CommissionSource } from './entities/sales-commission.entity';
 
 export interface JwtUserPayload {
   id: string;
   role: string;
 }
 
+export interface SalesTreeNode {
+  salesProfileId: string;
+  salesUserId: string;
+  phone: string | null;
+  fullName: string | null;
+  nationalId: string;
+  recruitedBySalesProfileId: string | null;
+  totalCommissionAmount: number;
+  pendingCommissionAmount: number;
+  paidCommissionAmount: number;
+  commissionCount: number;
+  ownerRegistrationCommissionCount: number;
+  salesRecruitmentCommissionCount: number;
+  children: SalesTreeNode[];
+}
+
 @Injectable()
 export class UsersService {
-  private static readonly COMMISSION_PER_REGISTRATION = 10;
-
   constructor(
     @InjectRepository(SalesCommission)
     private commissionRepo: Repository<SalesCommission>,
@@ -149,9 +164,146 @@ export class UsersService {
     if (!salesProfile) return [];
     return this.commissionRepo.find({
       where: { salesProfile: { id: salesProfile.id } },
-      relations: ['ownerProfile', 'ownerProfile.user'],
+      relations: [
+        'ownerProfile',
+        'ownerProfile.user',
+        'recruitedSalesProfile',
+        'recruitedSalesProfile.user',
+      ],
       order: { createdAt: 'DESC' },
     });
+  }
+
+  async getSalesTree(requester: { id: string; role: string }) {
+    if (requester.role !== UserRole.ADMIN) {
+      throw new ForbiddenException('Only admin can view sales tree');
+    }
+
+    const salesProfiles = await this.salesRepo.find({
+      relations: ['user', 'recruitedBySales', 'recruitedBySales.user'],
+      order: { createdAt: 'ASC' },
+    });
+
+    const commissionRows = await this.commissionRepo.find({
+      relations: ['salesProfile'],
+      order: { createdAt: 'ASC' },
+    });
+
+    const commissionBySalesProfile = new Map<
+      string,
+      {
+        totalCommissionAmount: number;
+        pendingCommissionAmount: number;
+        paidCommissionAmount: number;
+        commissionCount: number;
+        ownerRegistrationCommissionCount: number;
+        salesRecruitmentCommissionCount: number;
+      }
+    >();
+
+    for (const row of commissionRows) {
+      const salesProfileId = row.salesProfile?.id;
+      if (!salesProfileId) continue;
+      const amount = Number(row.amount ?? 0);
+      const current = commissionBySalesProfile.get(salesProfileId) ?? {
+        totalCommissionAmount: 0,
+        pendingCommissionAmount: 0,
+        paidCommissionAmount: 0,
+        commissionCount: 0,
+        ownerRegistrationCommissionCount: 0,
+        salesRecruitmentCommissionCount: 0,
+      };
+      current.commissionCount += 1;
+      current.totalCommissionAmount += amount;
+      if (row.status === CommissionStatus.PAID) {
+        current.paidCommissionAmount += amount;
+      } else {
+        current.pendingCommissionAmount += amount;
+      }
+      if (row.source === CommissionSource.SALES_RECRUITMENT) {
+        current.salesRecruitmentCommissionCount += 1;
+      } else {
+        current.ownerRegistrationCommissionCount += 1;
+      }
+      commissionBySalesProfile.set(salesProfileId, current);
+    }
+
+    const nodes = new Map<string, SalesTreeNode>();
+    for (const p of salesProfiles) {
+      const commission = commissionBySalesProfile.get(p.id);
+      nodes.set(p.id, {
+        salesProfileId: p.id,
+        salesUserId: p.user?.id ?? '',
+        phone: p.user?.phone ?? null,
+        fullName: p.fullName ?? null,
+        nationalId: p.nationalId,
+        recruitedBySalesProfileId: p.recruitedBySales?.id ?? null,
+        totalCommissionAmount: commission?.totalCommissionAmount ?? 0,
+        pendingCommissionAmount: commission?.pendingCommissionAmount ?? 0,
+        paidCommissionAmount: commission?.paidCommissionAmount ?? 0,
+        commissionCount: commission?.commissionCount ?? 0,
+        ownerRegistrationCommissionCount:
+            commission?.ownerRegistrationCommissionCount ?? 0,
+        salesRecruitmentCommissionCount:
+            commission?.salesRecruitmentCommissionCount ?? 0,
+        children: [],
+      });
+    }
+
+    const roots: SalesTreeNode[] = [];
+    for (const node of nodes.values()) {
+      if (!node.recruitedBySalesProfileId) {
+        roots.push(node);
+        continue;
+      }
+      const parent = nodes.get(node.recruitedBySalesProfileId);
+      if (!parent || parent.salesProfileId === node.salesProfileId) {
+        roots.push(node);
+        continue;
+      }
+      parent.children.push(node);
+    }
+
+    const flatten = (items: SalesTreeNode[]): SalesTreeNode[] => {
+      const result: SalesTreeNode[] = [];
+      for (const item of items) {
+        result.push(item);
+        if (item.children.length > 0) {
+          result.push(...flatten(item.children));
+        }
+      }
+      return result;
+    };
+
+    return {
+      roots,
+      totalSales: salesProfiles.length,
+      rootCount: roots.length,
+      maxDepth: this.computeMaxDepth(roots),
+      flat: flatten(roots).map((n) => ({
+        salesProfileId: n.salesProfileId,
+        salesUserId: n.salesUserId,
+        phone: n.phone,
+        fullName: n.fullName,
+        nationalId: n.nationalId,
+        recruitedBySalesProfileId: n.recruitedBySalesProfileId,
+        totalCommissionAmount: n.totalCommissionAmount,
+        pendingCommissionAmount: n.pendingCommissionAmount,
+        paidCommissionAmount: n.paidCommissionAmount,
+        commissionCount: n.commissionCount,
+        ownerRegistrationCommissionCount: n.ownerRegistrationCommissionCount,
+        salesRecruitmentCommissionCount: n.salesRecruitmentCommissionCount,
+      })),
+    };
+  }
+
+  private computeMaxDepth(nodes: SalesTreeNode[]): number {
+    if (nodes.length === 0) return 0;
+    const depth = (node: SalesTreeNode): number => {
+      if (node.children.length === 0) return 1;
+      return 1 + Math.max(...node.children.map(depth));
+    };
+    return Math.max(...nodes.map(depth));
   }
 
   async getSalesMonthlyCommissions(
@@ -171,7 +323,14 @@ export class UsersService {
 
     const commissions = await this.commissionRepo.find({
       where: { createdAt: Between(from, to) },
-      relations: ['salesProfile', 'salesProfile.user', 'ownerProfile', 'ownerProfile.user'],
+      relations: [
+        'salesProfile',
+        'salesProfile.user',
+        'ownerProfile',
+        'ownerProfile.user',
+        'recruitedSalesProfile',
+        'recruitedSalesProfile.user',
+      ],
       order: { createdAt: 'DESC' },
     });
 
@@ -188,13 +347,15 @@ export class UsersService {
         pendingAmount: number;
         paidAmount: number;
         totalAmount: number;
+        ownerRegistrationCount: number;
+        salesRecruitmentCount: number;
       }
     >();
 
     for (const c of commissions) {
       const salesProfileId = c.salesProfile?.id;
       if (!salesProfileId) continue;
-      const amount = UsersService.COMMISSION_PER_REGISTRATION;
+      const amount = Number(c.amount ?? 0);
       const existing = grouped.get(salesProfileId) ?? {
         salesProfileId,
         salesUserId: c.salesProfile.user?.id ?? '',
@@ -206,6 +367,8 @@ export class UsersService {
         pendingAmount: 0,
         paidAmount: 0,
         totalAmount: 0,
+        ownerRegistrationCount: 0,
+        salesRecruitmentCount: 0,
       };
 
       existing.registrationsCount += 1;
@@ -216,6 +379,11 @@ export class UsersService {
       } else {
         existing.pendingCount += 1;
         existing.pendingAmount += amount;
+      }
+      if (c.source === CommissionSource.SALES_RECRUITMENT) {
+        existing.salesRecruitmentCount += 1;
+      } else {
+        existing.ownerRegistrationCount += 1;
       }
       grouped.set(salesProfileId, existing);
     }
@@ -277,8 +445,7 @@ export class UsersService {
     let amount = 0;
     for (const c of pending) {
       c.status = CommissionStatus.PAID;
-      c.amount = UsersService.COMMISSION_PER_REGISTRATION;
-      amount += UsersService.COMMISSION_PER_REGISTRATION;
+      amount += Number(c.amount ?? 0);
     }
     await this.commissionRepo.save(pending);
 

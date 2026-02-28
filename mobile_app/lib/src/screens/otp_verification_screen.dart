@@ -42,6 +42,10 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
         Navigator.pushReplacementNamed(context, '/sales/register-owners');
         return;
       }
+      if (role == 'ADMIN') {
+        Navigator.pushReplacementNamed(context, '/admin/sales');
+        return;
+      }
       if (role == 'OWNER') {
         if (widget.fromRegistration) {
           Navigator.pushReplacementNamed(context, '/subscriptions');

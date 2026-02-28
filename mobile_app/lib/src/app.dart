@@ -6,6 +6,7 @@ import 'screens/payments_complete_screen.dart';
 import 'screens/request_wash_screen.dart';
 import 'screens/washer_requests_screen.dart';
 import 'screens/sales_owner_registration_screen.dart';
+import 'screens/admin_sales_management_screen.dart';
 import 'screens/splash_screen.dart';
 import 'screens/login_screen.dart';
 import 'theme/app_theme.dart';
@@ -55,6 +56,7 @@ class _AppState extends State<App> {
             '/washer/requests': (_) => const WasherRequestsScreen(),
             '/sales/register-owners': (_) =>
                 const SalesOwnerRegistrationScreen(),
+            '/admin/sales': (_) => const AdminSalesManagementScreen(),
             '/payments/complete': (ctx) {
               final args = ModalRoute.of(ctx)!.settings.arguments
                   as Map<String, dynamic>?;

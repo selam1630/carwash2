@@ -27,6 +27,7 @@ import { RegisterWasherDto } from './dto/register-washer.dto';
 import {
   SalesCommission,
   CommissionStatus,
+  CommissionSource,
 } from '../users/entities/sales-commission.entity';
 import { WasherProfile } from '../users/entities/washer-profile.entity';
 
@@ -328,11 +329,15 @@ export class AuthService {
    * Sales person verifies OTP to activate and get tokens.
    */
   async registerSales(
-    adminUser: { id: string; role: string },
+    creatorUser: { id: string; role: string },
     dto: RegisterSalesDto,
   ) {
-    if (adminUser.role !== UserRole.ADMIN) {
-      throw new UnauthorizedException('Only admin can register sales persons');
+    const createdByAdmin = creatorUser.role === UserRole.ADMIN;
+    const createdBySales = creatorUser.role === UserRole.SALES;
+    if (!createdByAdmin && !createdBySales) {
+      throw new UnauthorizedException(
+        'Only admin or sales can register sales persons',
+      );
     }
 
     const { phone, fullName, nationalId, bankDetails, sponsorNationalId } = dto;
@@ -357,6 +362,16 @@ export class AuthService {
       }),
     );
 
+    let recruiterSalesProfile: SalesProfile | null = null;
+    if (createdBySales) {
+      recruiterSalesProfile = await this.salesRepo.findOne({
+        where: { user: { id: creatorUser.id } },
+      });
+      if (!recruiterSalesProfile) {
+        throw new BadRequestException('Recruiter sales profile not found');
+      }
+    }
+
     const profile = this.salesRepo.create({
       user,
       fullName: fullName.trim(),
@@ -365,6 +380,7 @@ export class AuthService {
       sponsorNationalId: sponsorNationalId.trim(),
       nationalIdPhoto: dto.nationalIdPhoto ?? undefined,
       sponsorNationalIdPhoto: dto.sponsorNationalIdPhoto ?? undefined,
+      recruitedBySales: recruiterSalesProfile,
     });
 
     try {
@@ -380,10 +396,33 @@ export class AuthService {
       throw err;
     }
 
+    if (recruiterSalesProfile) {
+      const configuredRecruitAmount = Number(
+        this.config.get<number>('commission.amountPerRecruitedSales'),
+      );
+      const recruitCommissionAmount =
+        Number.isFinite(configuredRecruitAmount) &&
+        configuredRecruitAmount > 0
+          ? configuredRecruitAmount
+          : 10;
+
+      await this.salesCommissionRepo.save(
+        this.salesCommissionRepo.create({
+          salesProfile: recruiterSalesProfile,
+          ownerProfile: null,
+          recruitedSalesProfile: profile,
+          amount: recruitCommissionAmount,
+          status: CommissionStatus.PENDING,
+          source: CommissionSource.SALES_RECRUITMENT,
+        }),
+      );
+    }
+
     const otpResult = await this.sendOtpForRegistration(phone);
 
     return {
       message: `Sales person registered. ${otpResult.message}`,
+      recruitedBySalesId: recruiterSalesProfile?.id ?? null,
     };
   }
 
@@ -482,8 +521,9 @@ export class AuthService {
       throw new UnauthorizedException('Only sales can register owners on behalf');
     }
 
-    const salesProfile = await this.salesRepo.findOne({
+   const salesProfile = await this.salesRepo.findOne({
       where: { user: { id: salesUser.id } },
+      relations: ['recruitedBySales'],
     });
     if (!salesProfile) {
       throw new BadRequestException('Sales profile not found');
@@ -541,15 +581,56 @@ export class AuthService {
       throw err;
     }
 
-    const commissionAmount = 10;
+    const configuredBaseAmount = Number(
+      this.config.get<number>('commission.amountPerOwner'),
+    );
+    const fallbackBaseAmount =
+      Number.isFinite(configuredBaseAmount) && configuredBaseAmount > 0
+        ? configuredBaseAmount
+        : 10;
+
+    const configuredDirectAmount = Number(
+      this.config.get<number>('commission.amountPerOwnerDirect'),
+    );
+    const directCommissionAmount =
+      Number.isFinite(configuredDirectAmount) && configuredDirectAmount > 0
+        ? configuredDirectAmount
+        : fallbackBaseAmount;
+
+    const configuredRecruiterAmount = Number(
+      this.config.get<number>('commission.amountPerOwnerRecruiter'),
+    );
+    const recruiterCommissionAmount =
+      Number.isFinite(configuredRecruiterAmount) && configuredRecruiterAmount > 0
+        ? configuredRecruiterAmount
+        : Math.max(1, Math.floor(directCommissionAmount / 2));
+
     await this.salesCommissionRepo.save(
       this.salesCommissionRepo.create({
         salesProfile,
         ownerProfile: profile,
-        amount: commissionAmount,
+        recruitedSalesProfile: null,
+        amount: directCommissionAmount,
         status: CommissionStatus.PENDING,
+        source: CommissionSource.OWNER_REGISTRATION,
       }),
     );
+
+    if (
+      salesProfile.recruitedBySales &&
+      salesProfile.recruitedBySales.id !== salesProfile.id
+    ) {
+      await this.salesCommissionRepo.save(
+        this.salesCommissionRepo.create({
+          salesProfile: salesProfile.recruitedBySales,
+          ownerProfile: profile,
+          recruitedSalesProfile: null,
+          amount: recruiterCommissionAmount,
+          status: CommissionStatus.PENDING,
+          source: CommissionSource.OWNER_REGISTRATION,
+        }),
+      );
+    }
 
     const otpResult = await this.sendOtpForRegistration(phone);
 

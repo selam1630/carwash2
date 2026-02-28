@@ -288,6 +288,56 @@ class ApiClient {
     return resp.data;
   }
 
+  Future<dynamic> registerSalesByAdmin({
+    required String phone,
+    required String fullName,
+    required String nationalId,
+    required String sponsorNationalId,
+    required Map<String, dynamic> bankDetails,
+    String? nationalIdPhoto,
+    String? sponsorNationalIdPhoto,
+  }) async {
+    final payload = <String, dynamic>{
+      'phone': phone.trim(),
+      'fullName': fullName.trim(),
+      'nationalId': nationalId.trim(),
+      'sponsorNationalId': sponsorNationalId.trim(),
+      'bankDetails': bankDetails,
+      if (nationalIdPhoto != null && nationalIdPhoto.trim().isNotEmpty)
+        'nationalIdPhoto': nationalIdPhoto.trim(),
+      if (sponsorNationalIdPhoto != null &&
+          sponsorNationalIdPhoto.trim().isNotEmpty)
+        'sponsorNationalIdPhoto': sponsorNationalIdPhoto.trim(),
+    };
+    final resp = await dio.post('/auth/admin/register-sales', data: payload);
+    return resp.data;
+  }
+
+  Future<dynamic> registerSalesBySales({
+    required String phone,
+    required String fullName,
+    required String nationalId,
+    required String sponsorNationalId,
+    required Map<String, dynamic> bankDetails,
+    String? nationalIdPhoto,
+    String? sponsorNationalIdPhoto,
+  }) async {
+    final payload = <String, dynamic>{
+      'phone': phone.trim(),
+      'fullName': fullName.trim(),
+      'nationalId': nationalId.trim(),
+      'sponsorNationalId': sponsorNationalId.trim(),
+      'bankDetails': bankDetails,
+      if (nationalIdPhoto != null && nationalIdPhoto.trim().isNotEmpty)
+        'nationalIdPhoto': nationalIdPhoto.trim(),
+      if (sponsorNationalIdPhoto != null &&
+          sponsorNationalIdPhoto.trim().isNotEmpty)
+        'sponsorNationalIdPhoto': sponsorNationalIdPhoto.trim(),
+    };
+    final resp = await dio.post('/auth/sales/register-sales', data: payload);
+    return resp.data;
+  }
+
   /// Get available plans
   Future<List<dynamic>> getPlans() async {
     final resp = await dio.get('/plans');
@@ -522,6 +572,34 @@ class ApiClient {
   Future<List<dynamic>> getMySalesCommissions() async {
     final resp = await dio.get('/users/me/commissions');
     return _asList(resp.data);
+  }
+
+  Future<Map<String, dynamic>> getAdminSalesTree() async {
+    final resp = await dio.get('/users/admin/sales/tree');
+    return _asMap(resp.data);
+  }
+
+  Future<Map<String, dynamic>> getAdminSalesMonthlyCommissions({
+    required int year,
+    required int month,
+  }) async {
+    final resp = await dio.get(
+      '/users/admin/sales/monthly-commissions',
+      queryParameters: {'year': year, 'month': month},
+    );
+    return _asMap(resp.data);
+  }
+
+  Future<Map<String, dynamic>> approveAdminSalesMonthlyCommissions({
+    required String salesUserId,
+    required int year,
+    required int month,
+  }) async {
+    final resp = await dio.post(
+      '/users/admin/sales/$salesUserId/approve-monthly-commissions',
+      data: {'year': year, 'month': month},
+    );
+    return _asMap(resp.data);
   }
 
   Future<Map<String, dynamic>> getCurrentUser() async {

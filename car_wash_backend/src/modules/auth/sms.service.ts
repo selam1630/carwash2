@@ -9,7 +9,23 @@ export class SmsService {
 
   async sendOtp(phone: string, otp: string): Promise<void> {
     const message = `Your Labyajo verification code is ${otp}. It expires in 5 minutes.`;
-    await this.sendSms(phone, message);
+    const shouldLogOtp =
+      (process.env.OTP_LOG_TO_CONSOLE ?? 'true').toLowerCase() === 'true';
+    if (shouldLogOtp) {
+      this.logger.warn(`[DEV_OTP] phone=${phone} otp=${otp}`);
+    }
+    try {
+      await this.sendSms(phone, message);
+    } catch (err) {
+      if (shouldLogOtp) {
+        const reason = err instanceof Error ? err.message : String(err);
+        this.logger.warn(
+          `SMS delivery failed for ${phone}, but OTP is available in logs (dev mode): ${reason}`,
+        );
+        return;
+      }
+      throw err;
+    }
   }
 
   async sendSms(phone: string, message: string): Promise<void> {
