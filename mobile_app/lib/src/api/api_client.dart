@@ -574,6 +574,11 @@ class ApiClient {
     return _asList(resp.data);
   }
 
+  Future<Map<String, dynamic>> getSalesReminderLeads() async {
+    final resp = await dio.get('/users/sales/reminder-leads');
+    return _asMap(resp.data);
+  }
+
   Future<Map<String, dynamic>> getAdminSalesTree() async {
     final resp = await dio.get('/users/admin/sales/tree');
     return _asMap(resp.data);

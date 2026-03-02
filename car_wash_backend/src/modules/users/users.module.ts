@@ -8,6 +8,7 @@ import { WasherProfile } from './entities/washer-profile.entity';
 import { SalesProfile } from './entities/sales-profile.entity';
 import { SalesCommission } from './entities/sales-commission.entity';
 import { MulterModule } from '@nestjs/platform-express';
+import { OwnerSubscription } from '../plans/entities/owner-subscription.entity';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { MulterModule } from '@nestjs/platform-express';
       WasherProfile,
       SalesProfile,
       SalesCommission,
+      OwnerSubscription,
     ]),
     MulterModule.register({ dest: './uploads' }),
   ],

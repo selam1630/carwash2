@@ -9,7 +9,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Between, In, MoreThan, Repository } from 'typeorm';
 import { User, UserRole } from '../users/entities/user.entity';
 import { OwnerSubscription } from '../plans/entities/owner-subscription.entity';
-import { SmsService } from '../auth/sms.service';
 import { CreateWashRequestDto } from './dto/create-wash-request.dto';
 import { UpdateLocationDto } from './dto/update-location.dto';
 import { WashRequest, WashRequestStatus } from './entities/wash-request.entity';
@@ -30,7 +29,6 @@ export class WashService {
     private readonly usersRepo: Repository<User>,
     @InjectRepository(OwnerSubscription)
     private readonly ownerSubRepo: Repository<OwnerSubscription>,
-    private readonly sms: SmsService,
     @InjectRedis()
     private readonly redis: Redis,
   ) {
@@ -778,40 +776,7 @@ export class WashService {
     sub.remainingWashes = Math.max(currentRemaining - 1, 0);
     await this.ownerSubRepo.save(sub);
 
-    // If package just finished for a sales-registered owner, notify sales to follow up.
-    if (sub.remainingWashes == 0) {
-      let salesPhone = sub.ownerProfile?.registeredBySales?.user?.phone ?? null;
-      const ownerPhone = sub.ownerProfile?.user?.phone;
-      if (!salesPhone) {
-        salesPhone = await this.pickRandomSalesPhone();
-      }
-      if (salesPhone && ownerPhone) {
-        const msg =
-          `Reminder: Customer ${ownerPhone} finished package. ` +
-          `Please call and remind them to buy a new package.`;
-        try {
-          await this.sms.sendSms(salesPhone, msg);
-        } catch (err) {
-          this.logger.warn(`Failed to notify sales ${salesPhone}: ${(err as Error).message}`);
-        }
-      }
-    }
-  }
-
-  private async pickRandomSalesPhone(): Promise<string | null> {
-    let salesUsers = await this.usersRepo.find({
-      where: { role: UserRole.SALES, isActive: true },
-      select: ['id', 'phone'],
-    });
-    if (salesUsers.length == 0) {
-      salesUsers = await this.usersRepo.find({
-        where: { role: UserRole.SALES },
-        select: ['id', 'phone'],
-      });
-    }
-    if (salesUsers.length == 0) return null;
-    const idx = Math.floor(Math.random() * salesUsers.length);
-    return salesUsers[idx]?.phone ?? null;
+    // Reminder follow-up is now shown in Sales dashboard (not SMS push).
   }
 
   private async ensureWasher(user: AuthUser) {

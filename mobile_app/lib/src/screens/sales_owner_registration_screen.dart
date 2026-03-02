@@ -39,8 +39,10 @@ class _SalesOwnerRegistrationScreenState
   bool _loading = false;
   bool _loadingSalesRegistration = false;
   bool _loadingCommissions = false;
+  bool _loadingReminderLeads = false;
 
   List<dynamic> _commissions = [];
+  List<dynamic> _reminderLeads = [];
   int _registeredCount = 0;
   double _commissionTotal = 0;
 
@@ -48,6 +50,7 @@ class _SalesOwnerRegistrationScreenState
   void initState() {
     super.initState();
     _loadCommissions();
+    _loadReminderLeads();
   }
 
   @override
@@ -102,6 +105,25 @@ class _SalesOwnerRegistrationScreenState
       );
     } finally {
       if (mounted) setState(() => _loadingCommissions = false);
+    }
+  }
+
+  Future<void> _loadReminderLeads() async {
+    setState(() => _loadingReminderLeads = true);
+    try {
+      final res = await _client.getSalesReminderLeads();
+      final items = (res['items'] as List?) ?? const [];
+      if (!mounted) return;
+      setState(() {
+        _reminderLeads = items;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to load reminder leads: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _loadingReminderLeads = false);
     }
   }
 
@@ -160,6 +182,7 @@ class _SalesOwnerRegistrationScreenState
         _driverLicense = null;
       });
       await _loadCommissions();
+      await _loadReminderLeads();
     } catch (e) {
       String message = '$e';
       if (e is DioException) {
@@ -230,6 +253,7 @@ class _SalesOwnerRegistrationScreenState
       _salesBankName.clear();
       _salesBankAccount.clear();
       _salesBankAccountName.clear();
+      await _loadReminderLeads();
     } catch (e) {
       String message = '$e';
       if (e is DioException) {
@@ -257,7 +281,12 @@ class _SalesOwnerRegistrationScreenState
         title: const Text('Sales Owner Registration'),
         actions: [
           IconButton(
-            onPressed: _loadingCommissions ? null : _loadCommissions,
+            onPressed: (_loadingCommissions || _loadingReminderLeads)
+                ? null
+                : () async {
+                    await _loadCommissions();
+                    await _loadReminderLeads();
+                  },
             icon: const Icon(Icons.refresh),
           ),
           const ThemeModeAction(),
@@ -422,6 +451,31 @@ class _SalesOwnerRegistrationScreenState
                 ],
               ),
             ),
+            const SizedBox(height: 18),
+            const Text('Re-subscription Reminder Leads'),
+            const SizedBox(height: 8),
+            if (_loadingReminderLeads)
+              const Center(child: CircularProgressIndicator())
+            else if (_reminderLeads.isEmpty)
+              const Text('No reminder leads currently assigned.')
+            else
+              ..._reminderLeads.map((row) {
+                final m = row is Map ? row : const <String, dynamic>{};
+                final ownerName = (m['ownerFullName'] ?? '-').toString();
+                final ownerPhone = (m['ownerPhone'] ?? '-').toString();
+                final plan = (m['latestPlanName'] ?? '-').toString();
+                final remaining = m['latestRemainingWashes'];
+                final expiry = (m['latestExpiresAt'] ?? '-').toString();
+                return Card(
+                  child: ListTile(
+                    title: Text('$ownerName ($ownerPhone)'),
+                    subtitle: Text(
+                      'Plan: $plan, Remaining: ${remaining ?? '-'}\nExpired/Finished at: $expiry',
+                    ),
+                    isThreeLine: true,
+                  ),
+                );
+              }),
             const SizedBox(height: 18),
             const Text('My Commission Records'),
             const SizedBox(height: 8),

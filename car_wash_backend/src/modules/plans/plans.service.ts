@@ -25,16 +25,17 @@ export class PlansService {
     private userRepo: Repository<User>,
   ) {}
 
-  /** Owner subscribes to a plan. Expires at end of current month. */
+  /** Owner subscribes to a plan. Expires one month from subscription time. */
   async subscribe(ownerUserId: string, planId: string): Promise<OwnerSubscription> {
     const plan = await this.planRepo.findOne({ where: { id: planId } });
     if (!plan) throw new NotFoundException('Plan not found');
 
     const owner = await this.ensureOwnerProfile(ownerUserId);
 
-    // compute end of current month
+    // Expire exactly one month from now.
     const now = new Date();
-    const expires = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    const expires = new Date(now);
+    expires.setMonth(expires.getMonth() + 1);
 
     const sub = this.subRepo.create({
       ownerProfile: owner,

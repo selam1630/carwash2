@@ -85,6 +85,12 @@ export class UsersController {
     return this.usersService.getMyCommissions(req.user);
   }
 
+  @Get('sales/reminder-leads')
+  @Roles(UserRole.SALES, UserRole.ADMIN)
+  getSalesReminderLeads(@Req() req: { user: JwtPayload }) {
+    return this.usersService.getSalesReminderLeads(req.user);
+  }
+
   @Get('admin/sales/monthly-commissions')
   @Roles(UserRole.ADMIN)
   getSalesMonthlyCommissions(

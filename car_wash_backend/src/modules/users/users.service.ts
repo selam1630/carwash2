@@ -17,6 +17,7 @@ import { UpdateWasherProfileDto } from './dto/update-washer-profile.dto';
 import { SalesCommission } from './entities/sales-commission.entity';
 import { CommissionStatus } from './entities/sales-commission.entity';
 import { CommissionSource } from './entities/sales-commission.entity';
+import { OwnerSubscription } from '../plans/entities/owner-subscription.entity';
 
 export interface JwtUserPayload {
   id: string;
@@ -39,6 +40,23 @@ export interface SalesTreeNode {
   children: SalesTreeNode[];
 }
 
+export interface SalesReminderLead {
+  ownerProfileId: string;
+  ownerUserId: string;
+  ownerFullName: string | null;
+  ownerPhone: string | null;
+  plateNumber: string | null;
+  latestSubscriptionId: string;
+  latestPlanName: string | null;
+  latestExpiresAt: string;
+  latestRemainingWashes: number | null;
+  registeredBySalesProfileId: string | null;
+  assignedSalesProfileId: string | null;
+  assignedSalesUserId: string | null;
+  assignedSalesPhone: string | null;
+  assignedSalesFullName: string | null;
+}
+
 @Injectable()
 export class UsersService {
   constructor(
@@ -50,6 +68,8 @@ export class UsersService {
     private washerRepo: Repository<WasherProfile>,
     @InjectRepository(SalesProfile)
     private salesRepo: Repository<SalesProfile>,
+    @InjectRepository(OwnerSubscription)
+    private ownerSubRepo: Repository<OwnerSubscription>,
   ) {}
 
   async getMe(payload: JwtUserPayload): Promise<User> {
@@ -172,6 +192,122 @@ export class UsersService {
       ],
       order: { createdAt: 'DESC' },
     });
+  }
+
+  async getSalesReminderLeads(user: { id: string; role: string }) {
+    const role = String(user.role).toUpperCase();
+    if (role !== UserRole.SALES && role !== UserRole.ADMIN) {
+      throw new ForbiddenException('Only sales/admin can view reminder leads');
+    }
+
+    const salesProfiles = await this.salesRepo.find({
+      relations: ['user'],
+      where: { user: { isActive: true } },
+      order: { createdAt: 'ASC' },
+    });
+    if (salesProfiles.length === 0) {
+      return {
+        generatedAt: new Date().toISOString(),
+        totalLeads: 0,
+        items: [] as SalesReminderLead[],
+      };
+    }
+
+    const subs = await this.ownerSubRepo.find({
+      relations: [
+        'plan',
+        'ownerProfile',
+        'ownerProfile.user',
+        'ownerProfile.registeredBySales',
+        'ownerProfile.registeredBySales.user',
+      ],
+      order: { createdAt: 'DESC' },
+      take: 5000,
+    });
+
+    const latestByOwner = new Map<string, OwnerSubscription>();
+    for (const s of subs) {
+      const ownerProfileId = s.ownerProfile?.id;
+      if (!ownerProfileId) continue;
+      if (!latestByOwner.has(ownerProfileId)) {
+        latestByOwner.set(ownerProfileId, s);
+      }
+    }
+
+    const now = new Date();
+    const leads: SalesReminderLead[] = [];
+
+    for (const latest of latestByOwner.values()) {
+      const ownerProfile = latest.ownerProfile;
+      if (!ownerProfile || !ownerProfile.user) continue;
+
+      const remaining = latest.remainingWashes;
+      const endedByUsage = remaining != null && Number(remaining) <= 0;
+      const endedByExpiry = new Date(latest.expiresAt) <= now;
+      if (!endedByUsage && !endedByExpiry) continue;
+
+      const assignedSales = this.pickAssignedSalesForOwner(
+        ownerProfile.id,
+        ownerProfile.registeredBySales?.id ?? null,
+        salesProfiles,
+      );
+
+      leads.push({
+        ownerProfileId: ownerProfile.id,
+        ownerUserId: ownerProfile.user.id,
+        ownerFullName: ownerProfile.fullName ?? null,
+        ownerPhone: ownerProfile.user.phone ?? null,
+        plateNumber: ownerProfile.plateNumber ?? null,
+        latestSubscriptionId: latest.id,
+        latestPlanName: latest.plan?.name ?? null,
+        latestExpiresAt: latest.expiresAt.toISOString(),
+        latestRemainingWashes:
+          latest.remainingWashes == null ? null : Number(latest.remainingWashes),
+        registeredBySalesProfileId: ownerProfile.registeredBySales?.id ?? null,
+        assignedSalesProfileId: assignedSales?.id ?? null,
+        assignedSalesUserId: assignedSales?.user?.id ?? null,
+        assignedSalesPhone: assignedSales?.user?.phone ?? null,
+        assignedSalesFullName: assignedSales?.fullName ?? null,
+      });
+    }
+
+    let items = leads;
+    if (role === UserRole.SALES) {
+      const mySalesProfile = await this.salesRepo.findOne({
+        where: { user: { id: user.id } },
+        relations: ['user'],
+      });
+      if (!mySalesProfile) return { generatedAt: new Date().toISOString(), totalLeads: 0, items: [] };
+      items = leads.filter(
+        (x) => x.assignedSalesProfileId === mySalesProfile.id,
+      );
+    }
+
+    items.sort((a, b) => a.latestExpiresAt.localeCompare(b.latestExpiresAt));
+    return {
+      generatedAt: new Date().toISOString(),
+      totalLeads: items.length,
+      items,
+    };
+  }
+
+  private pickAssignedSalesForOwner(
+    ownerProfileId: string,
+    registeredBySalesProfileId: string | null,
+    salesProfiles: SalesProfile[],
+  ): SalesProfile | null {
+    if (salesProfiles.length === 0) return null;
+    if (registeredBySalesProfileId) {
+      const direct = salesProfiles.find((s) => s.id === registeredBySalesProfileId);
+      if (direct) return direct;
+    }
+
+    let hash = 0;
+    for (let i = 0; i < ownerProfileId.length; i += 1) {
+      hash = (hash * 31 + ownerProfileId.charCodeAt(i)) >>> 0;
+    }
+    const idx = hash % salesProfiles.length;
+    return salesProfiles[idx] ?? null;
   }
 
   async getSalesTree(requester: { id: string; role: string }) {
