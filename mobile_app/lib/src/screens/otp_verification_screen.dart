@@ -39,7 +39,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
         return;
       }
       if (role == 'SALES') {
-        Navigator.pushReplacementNamed(context, '/sales/register-owners');
+        Navigator.pushReplacementNamed(context, '/sales');
         return;
       }
       if (role == 'ADMIN') {

@@ -453,6 +453,10 @@ class _SalesOwnerRegistrationScreenState
             ),
             const SizedBox(height: 18),
             const Text('Re-subscription Reminder Leads'),
+            const SizedBox(height: 4),
+            const Text(
+              'Please call each listed customer and remind them to subscribe again.',
+            ),
             const SizedBox(height: 8),
             if (_loadingReminderLeads)
               const Center(child: CircularProgressIndicator())
@@ -470,7 +474,7 @@ class _SalesOwnerRegistrationScreenState
                   child: ListTile(
                     title: Text('$ownerName ($ownerPhone)'),
                     subtitle: Text(
-                      'Plan: $plan, Remaining: ${remaining ?? '-'}\nExpired/Finished at: $expiry',
+                      'Call this phone for re-subscription reminder: $ownerPhone\nPlan: $plan, Remaining: ${remaining ?? '-'}\nExpired/Finished at: $expiry',
                     ),
                     isThreeLine: true,
                   ),

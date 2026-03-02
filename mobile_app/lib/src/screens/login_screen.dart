@@ -36,7 +36,7 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
       if (role == 'SALES') {
-        Navigator.pushReplacementNamed(context, '/sales/register-owners');
+        Navigator.pushReplacementNamed(context, '/sales');
         return;
       }
       if (role == 'ADMIN') {
@@ -87,7 +87,7 @@ class _LoginScreenState extends State<LoginScreen> {
           hasSub || everSubscribed ? '/request-wash' : '/subscriptions',
         );
       } else if (roleUpper == 'SALES') {
-        Navigator.pushReplacementNamed(context, '/sales/register-owners');
+        Navigator.pushReplacementNamed(context, '/sales');
       } else if (roleUpper == 'ADMIN') {
         Navigator.pushReplacementNamed(context, '/admin/sales');
       } else {
