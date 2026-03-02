@@ -6,7 +6,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, Repository } from 'typeorm';
+import { Between, In, Repository } from 'typeorm';
 import { User, UserRole } from './entities/user.entity';
 import { OwnerProfile } from './entities/owner-profile.entity';
 import { WasherProfile } from './entities/washer-profile.entity';
@@ -18,6 +18,7 @@ import { SalesCommission } from './entities/sales-commission.entity';
 import { CommissionStatus } from './entities/sales-commission.entity';
 import { CommissionSource } from './entities/sales-commission.entity';
 import { OwnerSubscription } from '../plans/entities/owner-subscription.entity';
+import { WashRequest, WashRequestStatus } from '../wash/entities/wash-request.entity';
 
 export interface JwtUserPayload {
   id: string;
@@ -46,7 +47,7 @@ export interface SalesReminderLead {
   ownerFullName: string | null;
   ownerPhone: string | null;
   plateNumber: string | null;
-  latestSubscriptionId: string;
+  latestSubscriptionId: string | null;
   latestPlanName: string | null;
   latestExpiresAt: string;
   latestRemainingWashes: number | null;
@@ -55,6 +56,11 @@ export interface SalesReminderLead {
   assignedSalesUserId: string | null;
   assignedSalesPhone: string | null;
   assignedSalesFullName: string | null;
+  reminderReason:
+    | 'CANCELLED_BY_OWNER'
+    | 'PACKAGE_FINISHED'
+    | 'PACKAGE_EXPIRED'
+    | 'WASH_REQUEST_CANCELLED';
 }
 
 @Injectable()
@@ -70,6 +76,8 @@ export class UsersService {
     private salesRepo: Repository<SalesProfile>,
     @InjectRepository(OwnerSubscription)
     private ownerSubRepo: Repository<OwnerSubscription>,
+    @InjectRepository(WashRequest)
+    private washRepo: Repository<WashRequest>,
   ) {}
 
   async getMe(payload: JwtUserPayload): Promise<User> {
@@ -244,7 +252,14 @@ export class UsersService {
       const remaining = latest.remainingWashes;
       const endedByUsage = remaining != null && Number(remaining) <= 0;
       const endedByExpiry = new Date(latest.expiresAt) <= now;
-      if (!endedByUsage && !endedByExpiry) continue;
+      const canceledByOwner = latest.canceledByOwner === true;
+      if (!canceledByOwner && !endedByUsage && !endedByExpiry) continue;
+
+      const reminderReason: SalesReminderLead['reminderReason'] = canceledByOwner
+        ? 'CANCELLED_BY_OWNER'
+        : endedByUsage
+          ? 'PACKAGE_FINISHED'
+          : 'PACKAGE_EXPIRED';
 
       const assignedSales = this.pickAssignedSalesForOwner(
         ownerProfile.id,
@@ -268,17 +283,86 @@ export class UsersService {
         assignedSalesUserId: assignedSales?.user?.id ?? null,
         assignedSalesPhone: assignedSales?.user?.phone ?? null,
         assignedSalesFullName: assignedSales?.fullName ?? null,
+        reminderReason,
       });
     }
 
-    let items = leads;
+    const leadByOwner = new Map<string, SalesReminderLead>();
+    for (const lead of leads) {
+      leadByOwner.set(lead.ownerProfileId, lead);
+    }
+
+    const cancelledRequests = await this.washRepo.find({
+      where: { status: WashRequestStatus.CANCELLED },
+      relations: ['owner'],
+      order: { updatedAt: 'DESC' },
+      take: 5000,
+    });
+
+    if (cancelledRequests.length > 0) {
+      const uniqueOwnerIds = Array.from(
+        new Set(cancelledRequests.map((r) => r.ownerId).filter(Boolean)),
+      );
+
+      const ownerProfiles = uniqueOwnerIds.length
+        ? await this.ownerRepo.find({
+            where: { user: { id: In(uniqueOwnerIds) } },
+            relations: ['user', 'registeredBySales', 'registeredBySales.user'],
+          })
+        : [];
+
+      const ownerProfileByUserId = new Map<string, OwnerProfile>();
+      for (const profile of ownerProfiles) {
+        const uid = profile.user?.id;
+        if (uid) ownerProfileByUserId.set(uid, profile);
+      }
+
+      const latestCancelledByOwner = new Map<string, WashRequest>();
+      for (const req of cancelledRequests) {
+        if (!req.ownerId) continue;
+        if (!latestCancelledByOwner.has(req.ownerId)) {
+          latestCancelledByOwner.set(req.ownerId, req);
+        }
+      }
+
+      for (const [ownerUserId, req] of latestCancelledByOwner.entries()) {
+        const profile = ownerProfileByUserId.get(ownerUserId);
+        if (!profile || !profile.user) continue;
+
+        const assignedSales = this.pickAssignedSalesForOwner(
+          profile.id,
+          profile.registeredBySales?.id ?? null,
+          salesProfiles,
+        );
+
+        leadByOwner.set(profile.id, {
+          ownerProfileId: profile.id,
+          ownerUserId: profile.user.id,
+          ownerFullName: profile.fullName ?? null,
+          ownerPhone: profile.user.phone ?? null,
+          plateNumber: profile.plateNumber ?? null,
+          latestSubscriptionId: null,
+          latestPlanName: null,
+          latestExpiresAt: (req.updatedAt ?? req.createdAt).toISOString(),
+          latestRemainingWashes: null,
+          registeredBySalesProfileId: profile.registeredBySales?.id ?? null,
+          assignedSalesProfileId: assignedSales?.id ?? null,
+          assignedSalesUserId: assignedSales?.user?.id ?? null,
+          assignedSalesPhone: assignedSales?.user?.phone ?? null,
+          assignedSalesFullName: assignedSales?.fullName ?? null,
+          reminderReason: 'WASH_REQUEST_CANCELLED',
+        });
+      }
+    }
+
+    let items = Array.from(leadByOwner.values());
     if (role === UserRole.SALES) {
       const mySalesProfile = await this.salesRepo.findOne({
         where: { user: { id: user.id } },
         relations: ['user'],
       });
       if (!mySalesProfile) return { generatedAt: new Date().toISOString(), totalLeads: 0, items: [] };
-      items = leads.filter(
+      items = items.filter(
         (x) => x.assignedSalesProfileId === mySalesProfile.id,
       );
     }

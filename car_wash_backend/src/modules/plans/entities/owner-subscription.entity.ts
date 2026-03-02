@@ -39,4 +39,10 @@ export class OwnerSubscription {
 
   @Column({ default: false })
   notified?: boolean;
+
+  @Column({ default: false })
+  canceledByOwner: boolean;
+
+  @Column({ type: 'timestamp', nullable: true })
+  canceledAt: Date | null;
 }

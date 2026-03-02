@@ -46,6 +46,8 @@ export class PlansService {
         ? null
         : Number(plan.washesPerMonth),
       ownerPhone: owner.user?.phone ?? null,
+      canceledByOwner: false,
+      canceledAt: null,
     });
     return this.subRepo.save(sub);
   }
@@ -121,6 +123,8 @@ export class PlansService {
     const sub = await this.subRepo.findOne({ where: { ownerProfile: { id: owner.id }, expiresAt: MoreThan(now) } });
     if (!sub) return { message: 'No active subscription' };
     sub.expiresAt = new Date();
+    sub.canceledByOwner = true;
+    sub.canceledAt = new Date();
     await this.subRepo.save(sub);
     return { message: 'Subscription cancelled' };
   }

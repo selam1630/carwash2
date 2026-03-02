@@ -42,6 +42,70 @@ class _SalesReminderLeadsScreenState extends State<SalesReminderLeadsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final cancellationLeads = _items.where((row) {
+      final m = row is Map ? row : const <String, dynamic>{};
+      return (m['reminderReason'] ?? '').toString() == 'WASH_REQUEST_CANCELLED';
+    }).toList();
+
+    final resubscriptionLeads = _items.where((row) {
+      final m = row is Map ? row : const <String, dynamic>{};
+      return (m['reminderReason'] ?? '').toString() != 'WASH_REQUEST_CANCELLED';
+    }).toList();
+
+    Widget buildLeadCard(dynamic row) {
+      final m = row is Map ? row : const <String, dynamic>{};
+      final ownerName = (m['ownerFullName'] ?? '-').toString();
+      final ownerPhone = (m['ownerPhone'] ?? '-').toString();
+      final plan = (m['latestPlanName'] ?? '-').toString();
+      final remaining = m['latestRemainingWashes'];
+      final expiry = (m['latestExpiresAt'] ?? '-').toString();
+      final reason = (m['reminderReason'] ?? '').toString();
+      final reasonText = reason == 'WASH_REQUEST_CANCELLED'
+          ? 'Customer cancelled wash request. Call and ask why they cancelled.'
+          : reason == 'CANCELLED_BY_OWNER'
+              ? 'Customer cancelled subscription. Call and ask cancellation reason.'
+              : reason == 'PACKAGE_FINISHED'
+                  ? 'Package washes finished. Call to remind re-subscription.'
+                  : 'Package expired. Call to remind re-subscription.';
+      return Card(
+        child: ListTile(
+          title: Text('$ownerName ($ownerPhone)'),
+          subtitle: Text(
+            'Call this phone: $ownerPhone\n'
+            '$reasonText\n'
+            'Plan: $plan, Remaining: ${remaining ?? '-'}\n'
+            'Expired/Finished at: $expiry',
+          ),
+          isThreeLine: true,
+        ),
+      );
+    }
+
+    Widget buildSection({
+      required String title,
+      required String subtitle,
+      required List<dynamic> items,
+    }) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 4),
+              Text(subtitle),
+              const SizedBox(height: 8),
+              if (items.isEmpty)
+                const Text('No items currently.')
+              else
+                ...items.map(buildLeadCard),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Re-subscription Reminders'),
@@ -57,33 +121,25 @@ class _SalesReminderLeadsScreenState extends State<SalesReminderLeadsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Please call each listed customer and remind them to subscribe again.'),
-            const SizedBox(height: 10),
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
                   : _items.isEmpty
                       ? const Center(child: Text('No reminder leads currently assigned.'))
                       : ListView(
-                          children: _items.map((row) {
-                            final m = row is Map ? row : const <String, dynamic>{};
-                            final ownerName = (m['ownerFullName'] ?? '-').toString();
-                            final ownerPhone = (m['ownerPhone'] ?? '-').toString();
-                            final plan = (m['latestPlanName'] ?? '-').toString();
-                            final remaining = m['latestRemainingWashes'];
-                            final expiry = (m['latestExpiresAt'] ?? '-').toString();
-                            return Card(
-                              child: ListTile(
-                                title: Text('$ownerName ($ownerPhone)'),
-                                subtitle: Text(
-                                  'Call this phone for re-subscription reminder: $ownerPhone\n'
-                                  'Plan: $plan, Remaining: ${remaining ?? '-'}\n'
-                                  'Expired/Finished at: $expiry',
-                                ),
-                                isThreeLine: true,
-                              ),
-                            );
-                          }).toList(),
+                          children: [
+                            buildSection(
+                              title: 'Re-subscription Reminders',
+                              subtitle: 'Call these customers and remind them to subscribe again.',
+                              items: resubscriptionLeads,
+                            ),
+                            const SizedBox(height: 10),
+                            buildSection(
+                              title: 'Cancellation Reason Follow-up',
+                              subtitle: 'Call these customers and ask why they cancelled the wash request.',
+                              items: cancellationLeads,
+                            ),
+                          ],
                         ),
             ),
           ],
@@ -92,4 +148,3 @@ class _SalesReminderLeadsScreenState extends State<SalesReminderLeadsScreen> {
     );
   }
 }
-
