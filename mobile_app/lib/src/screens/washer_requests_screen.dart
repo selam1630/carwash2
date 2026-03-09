@@ -95,6 +95,11 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
     return template.replaceAll('{apiKey}', token);
   }
 
+  bool _useGebetaTiles() {
+    final raw = dotenv.env['FLUTTER_USE_GEBETA_TILES']?.trim().toLowerCase();
+    return raw == 'true' || raw == '1' || raw == 'yes';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -676,10 +681,14 @@ class _WasherRequestsScreenState extends State<WasherRequestsScreen> {
             ? _voyagerDarkMapUrlTemplate
             : _voyagerDarkSoftMapUrlTemplate)
         : (_highContrastMap ? _hotMapUrlTemplate : _voyagerMapUrlTemplate);
-    final gebetaMapTemplate =
-        _gebetaTileTemplate(isDark: isDark, highContrast: _highContrastMap);
-    final mapUrl =
-        _injectGebetaToken(gebetaMapTemplate ?? fallbackMapUrl);
+    final gebetaMapTemplate = _useGebetaTiles()
+        ? _gebetaTileTemplate(isDark: isDark, highContrast: _highContrastMap)
+        : null;
+    final candidateMapUrl = _injectGebetaToken(gebetaMapTemplate ?? fallbackMapUrl);
+    final hasRequiredPlaceholders = candidateMapUrl.contains('{z}') &&
+        candidateMapUrl.contains('{x}') &&
+        candidateMapUrl.contains('{y}');
+    final mapUrl = hasRequiredPlaceholders ? candidateMapUrl : fallbackMapUrl;
     final mapUsesSubdomains = mapUrl.contains('{s}');
     final ownerMarkers = <LatLng>[];
     for (final r in _requests) {

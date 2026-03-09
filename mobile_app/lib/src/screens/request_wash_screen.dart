@@ -1,5 +1,4 @@
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -74,6 +73,11 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
     final token = dotenv.env['FLUTTER_GEBETA_API_TOKEN']?.trim() ?? '';
     if (token.isEmpty) return template;
     return template.replaceAll('{apiKey}', token);
+  }
+
+  bool _useGebetaTiles() {
+    final raw = dotenv.env['FLUTTER_USE_GEBETA_TILES']?.trim().toLowerCase();
+    return raw == 'true' || raw == '1' || raw == 'yes';
   }
 
   _ParsedRoute _extractRoute(dynamic payload) {
@@ -598,7 +602,6 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
   }
 
   void _moveMap(LatLng center, double zoom) {
-    if (kIsWeb) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       try {
@@ -781,8 +784,9 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
             ? _voyagerDarkMapUrlTemplate
             : _voyagerDarkSoftMapUrlTemplate)
         : _voyagerMapUrlTemplate;
-    final gebetaMapTemplate =
-        _gebetaTileTemplate(isDark: isDark, highContrast: _highContrastMap);
+    final gebetaMapTemplate = _useGebetaTiles()
+        ? _gebetaTileTemplate(isDark: isDark, highContrast: _highContrastMap)
+        : null;
     final candidateMapUrl =
         _injectGebetaToken(gebetaMapTemplate ?? fallbackMapUrl);
     final hasRequiredPlaceholders = candidateMapUrl.contains('{z}') &&
