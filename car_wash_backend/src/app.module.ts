@@ -4,8 +4,10 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import configuration from './config/configuration';
 import schema from './config/schema';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { APP_GUARD } from '@nestjs/core';
 import { User } from './modules/users/entities/user.entity';
 import { RefreshToken } from './modules/auth/entities/refresh-token.entities';
+import { SecurityAuditEvent } from './modules/auth/entities/security-audit-event.entity';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { OwnerProfile } from './modules/users/entities/owner-profile.entity';
@@ -17,6 +19,7 @@ import { OwnerSubscription } from './modules/plans/entities/owner-subscription.e
 import { PlansModule } from './modules/plans/plans.module';
 import { WashRequest } from './modules/wash/entities/wash-request.entity';
 import { WashModule } from './modules/wash/wash.module';
+import { SimpleThrottleGuard } from './common/guards/simple-throttle.guard';
 
 @Module({
   imports: [
@@ -39,6 +42,7 @@ import { WashModule } from './modules/wash/wash.module';
         entities: [
           User,
           RefreshToken,
+          SecurityAuditEvent,
           OwnerProfile,
           WasherProfile,
           SalesProfile,
@@ -47,7 +51,7 @@ import { WashModule } from './modules/wash/wash.module';
           OwnerSubscription,
           WashRequest,
         ],
-        synchronize: true,
+        synchronize: config.get<boolean>('database.synchronize') ?? false,
       }),
       inject: [ConfigService],
     }),
@@ -56,6 +60,12 @@ import { WashModule } from './modules/wash/wash.module';
     UsersModule,
     PlansModule,
     WashModule,
+  ],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: SimpleThrottleGuard,
+    },
   ],
 })
 export class AppModule {}

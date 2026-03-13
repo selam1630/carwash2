@@ -13,7 +13,7 @@ import { Server, Socket } from 'socket.io';
 import { UserRole } from '../users/entities/user.entity';
 import { UpdateLocationDto } from './dto/update-location.dto';
 import { WashService } from './wash.service';
-import { WashRequest } from './entities/wash-request.entity';
+import { WashRequest, WashRequestStatus } from './entities/wash-request.entity';
 
 type SocketUser = { sub: string; role: UserRole };
 
@@ -38,11 +38,19 @@ type OwnerLocationPayload = {
 
 @WebSocketGateway({
   namespace: '/wash',
-  cors: { origin: true, credentials: true },
+  cors: {
+    origin:
+      process.env.NODE_ENV === 'production'
+        ? (process.env.CORS_ORIGINS || '')
+            .split(',')
+            .map((origin) => origin.trim())
+            .filter(Boolean)
+        : true,
+    credentials: true,
+  },
 })
 export class WashGateway implements OnGatewayConnection {
   private readonly logger = new Logger(WashGateway.name);
-  private readonly sequentialAssignDelayMs = 30_000;
   private readonly sequentialAssignments = new Map<
     string,
     { washerIds: string[]; nextIndex: number; ownerId: string; timer?: NodeJS.Timeout }
@@ -144,7 +152,7 @@ export class WashGateway implements OnGatewayConnection {
   }
 
   async emitRequestCreated(request: WashRequest) {
-    this.clearSequentialAssignment(request.id);
+    await this.clearSequentialAssignment(request.id);
 
     const payload = {
       requestId: request.id,
@@ -177,7 +185,7 @@ export class WashGateway implements OnGatewayConnection {
   }
 
   emitRequestAccepted(request: WashRequest) {
-    this.clearSequentialAssignment(request.id);
+    void this.clearSequentialAssignment(request.id);
     const payload = {
       requestId: request.id,
       ownerId: request.ownerId,
@@ -224,7 +232,7 @@ export class WashGateway implements OnGatewayConnection {
   }
 
   emitRequestCompleted(request: WashRequest) {
-    this.clearSequentialAssignment(request.id);
+    void this.clearSequentialAssignment(request.id);
     const payload = {
       requestId: request.id,
       ownerId: request.ownerId,
@@ -240,7 +248,7 @@ export class WashGateway implements OnGatewayConnection {
   }
 
   emitRequestCancelled(request: WashRequest) {
-    this.clearSequentialAssignment(request.id);
+    void this.clearSequentialAssignment(request.id);
     const payload = {
       requestId: request.id,
       ownerId: request.ownerId,
@@ -255,7 +263,7 @@ export class WashGateway implements OnGatewayConnection {
   }
 
   async emitRequestReopened(request: WashRequest) {
-    this.clearSequentialAssignment(request.id);
+    await this.clearSequentialAssignment(request.id);
     const payload = {
       requestId: request.id,
       ownerId: request.ownerId,
@@ -308,7 +316,7 @@ export class WashGateway implements OnGatewayConnection {
 
     const isStillRequested = await this.washService.isRequestStillRequested(requestId);
     if (!isStillRequested) {
-      this.clearSequentialAssignment(requestId);
+      await this.clearSequentialAssignment(requestId);
       return;
     }
 
@@ -317,11 +325,16 @@ export class WashGateway implements OnGatewayConnection {
         requestId,
         status: 'NO_WASHER_ACCEPTED',
       });
-      this.clearSequentialAssignment(requestId);
+      await this.clearSequentialAssignment(requestId);
       return;
     }
 
     const washerId = state.washerIds[state.nextIndex];
+    await this.washService.setCurrentDispatchOffer(
+      requestId,
+      washerId,
+      this.sequentialAssignDelayMs,
+    );
     this.server.to(this.userRoom(washerId)).emit('request:created', payload);
     state.nextIndex += 1;
 
@@ -337,11 +350,29 @@ export class WashGateway implements OnGatewayConnection {
     }, this.sequentialAssignDelayMs);
   }
 
-  private clearSequentialAssignment(requestId: string) {
+  async advanceSequentialDispatch(request: WashRequest) {
+    if (request.status !== WashRequestStatus.REQUESTED) return;
+    const payload = {
+      requestId: request.id,
+      ownerId: request.ownerId,
+      pickupLat: request.pickupLat,
+      pickupLng: request.pickupLng,
+      status: request.status,
+      createdAt: request.createdAt,
+    };
+    await this.dispatchNextWasher(request.id, payload);
+  }
+
+  private async clearSequentialAssignment(requestId: string) {
     const state = this.sequentialAssignments.get(requestId);
     if (state?.timer) {
       clearTimeout(state.timer);
     }
     this.sequentialAssignments.delete(requestId);
+    await this.washService.clearCurrentDispatchOffer(requestId);
+  }
+
+  private get sequentialAssignDelayMs() {
+    return this.configService.get<number>('wash.dispatchAcceptTimeoutMs') ?? 30_000;
   }
 }

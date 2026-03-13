@@ -37,6 +37,7 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
   LatLng? _washerLocation;
   LatLng? _mapCenter;
   List<_NearbyWasher> _nearbyWashers = [];
+  String? _selectedNearbyWasherId;
   String? _requestId;
   String? _activeRequestStatus;
   bool _activeHasBeforePhoto = false;
@@ -306,11 +307,21 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
           final washerId = it['washerId']?.toString();
           final lat = _asDouble(it['lat']);
           final lng = _asDouble(it['lng']);
+          final name = it['name']?.toString();
+          final phone = it['phone']?.toString();
+          final photo = it['photo']?.toString();
           if (washerId != null &&
               washerId.isNotEmpty &&
               lat != null &&
               lng != null) {
-            washers.add(_NearbyWasher(washerId: washerId, lat: lat, lng: lng));
+            washers.add(_NearbyWasher(
+              washerId: washerId,
+              lat: lat,
+              lng: lng,
+              name: name,
+              phone: phone,
+              photo: photo,
+            ));
           }
         }
       }
@@ -325,7 +336,15 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
         });
       }
       if (!mounted) return;
-      setState(() => _nearbyWashers = washers);
+      setState(() {
+        _nearbyWashers = washers;
+        if (washers.isEmpty) {
+          _selectedNearbyWasherId = null;
+        } else if (_selectedNearbyWasherId == null ||
+            !washers.any((w) => w.washerId == _selectedNearbyWasherId)) {
+          _selectedNearbyWasherId = washers.first.washerId;
+        }
+      });
       _focusNearbyCluster();
     } catch (_) {
       // ignore polling errors
@@ -601,6 +620,52 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
     _moveMap(point, _mapZoom);
   }
 
+  String? _buildPhotoUrl(String? raw) {
+    if (raw == null) return null;
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return null;
+    // Skip Google "imgres" proxy URLs which are not direct images.
+    if (trimmed.contains('google.com/imgres')) return null;
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      return trimmed;
+    }
+    final base = _api.dio.options.baseUrl.trim();
+    if (base.isEmpty) return trimmed;
+    if (trimmed.startsWith('/')) {
+      return '$base$trimmed';
+    }
+    return '$base/$trimmed';
+  }
+
+  Widget _buildWasherAvatar({
+    required bool isDark,
+    required String? photoUrl,
+  }) {
+    final fallback = Icon(Icons.pedal_bike, color: AppTheme.brandNavy);
+    if (photoUrl == null) {
+      return CircleAvatar(
+        radius: 22,
+        backgroundColor:
+            isDark ? const Color(0xFF111B33) : const Color(0xFFE8EEF8),
+        child: fallback,
+      );
+    }
+    return CircleAvatar(
+      radius: 22,
+      backgroundColor:
+          isDark ? const Color(0xFF111B33) : const Color(0xFFE8EEF8),
+      child: ClipOval(
+        child: Image.network(
+          photoUrl,
+          width: 44,
+          height: 44,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => fallback,
+        ),
+      ),
+    );
+  }
+
   void _moveMap(LatLng center, double zoom) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -820,16 +885,21 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
       for (final w in _nearbyWashers)
         Marker(
           point: LatLng(w.lat, w.lng),
-          width: 90,
-          height: 72,
-          builder: (_) => _buildLabeledMarker(
-            icon: Icons.pedal_bike,
-            color: isDark ? const Color(0xFF00E5FF) : AppTheme.brandCyan,
-            label: 'Nearby',
-            size: 24,
-            fillColor: isDark ? const Color(0xFF060A16) : null,
-            labelFillColor: isDark ? const Color(0xFF060A16) : null,
-            labelTextColor: isDark ? const Color(0xFFE6FBFF) : null,
+          width: 110,
+          height: 78,
+          builder: (_) => GestureDetector(
+            onTap: () {
+              setState(() => _selectedNearbyWasherId = w.washerId);
+            },
+            child: _buildLabeledMarker(
+              icon: Icons.pedal_bike,
+              color: isDark ? const Color(0xFF00E5FF) : AppTheme.brandCyan,
+              label: w.name?.trim().isNotEmpty == true ? w.name! : 'Nearby',
+              size: 24,
+              fillColor: isDark ? const Color(0xFF060A16) : null,
+              labelFillColor: isDark ? const Color(0xFF060A16) : null,
+              labelTextColor: isDark ? const Color(0xFFE6FBFF) : null,
+            ),
           ),
         ),
       if (_washerLocation != null)
@@ -1105,6 +1175,91 @@ class _RequestWashScreenState extends State<RequestWashScreen> {
                     ],
                   ),
                 ),
+                if (_selectedNearbyWasherId != null)
+                  Positioned(
+                    left: 12,
+                    right: 12,
+                    bottom: 12,
+                    child: Builder(
+                      builder: (_) {
+                        final selected = _nearbyWashers.firstWhere(
+                          (w) => w.washerId == _selectedNearbyWasherId,
+                          orElse: () => _nearbyWashers.first,
+                        );
+                        final photoUrl = _buildPhotoUrl(selected.photo);
+                        return Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? const Color(0xFF0A1020).withOpacity(0.95)
+                                : Colors.white.withOpacity(0.96),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: isDark
+                                  ? const Color(0xFF294180)
+                                  : const Color(0xFFD6DEF0),
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.15),
+                                blurRadius: 12,
+                                offset: const Offset(0, 6),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            children: [
+                              _buildWasherAvatar(
+                                isDark: isDark,
+                                photoUrl: photoUrl,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      selected.name?.trim().isNotEmpty == true
+                                          ? selected.name!
+                                          : 'Nearby washer',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        color: isDark
+                                            ? Colors.white
+                                            : Colors.black87,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      selected.phone?.trim().isNotEmpty == true
+                                          ? selected.phone!
+                                          : 'Phone unavailable',
+                                      style: TextStyle(
+                                        color: isDark
+                                            ? Colors.white70
+                                            : Colors.black54,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              IconButton(
+                                onPressed: () {
+                                  setState(() => _selectedNearbyWasherId = null);
+                                },
+                                icon: Icon(
+                                  Icons.close,
+                                  color: isDark ? Colors.white70 : Colors.black54,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
               ],
             ),
           ),
@@ -1155,11 +1310,17 @@ class _NearbyWasher {
   final String washerId;
   final double lat;
   final double lng;
+  final String? name;
+  final String? phone;
+  final String? photo;
 
   _NearbyWasher({
     required this.washerId,
     required this.lat,
     required this.lng,
+    this.name,
+    this.phone,
+    this.photo,
   });
 }
 

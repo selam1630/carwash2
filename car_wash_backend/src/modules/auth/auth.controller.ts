@@ -30,19 +30,31 @@ import * as path from 'path';
 export class AuthController {
   constructor(private authService: AuthService) {}
 
+  private extractMeta(req: any) {
+    return {
+      ip: req.ip || req.headers?.['x-forwarded-for'] || undefined,
+      userAgent: req.headers?.['user-agent'] || undefined,
+      route: req.originalUrl || req.url || undefined,
+    };
+  }
+
   @Post('send-otp')
-  sendOtp(@Body() dto: SendOtpDto) {
-    return this.authService.sendOtp(dto);
+  sendOtp(@Req() req: any, @Body() dto: SendOtpDto) {
+    return this.authService.sendOtp(dto, this.extractMeta(req));
   }
 
   @Post('verify-otp')
-  verifyOtp(@Body() dto: VerifyOtpDto) {
-    return this.authService.verifyOtp(dto);
+  verifyOtp(@Req() req: any, @Body() dto: VerifyOtpDto) {
+    return this.authService.verifyOtp(dto, this.extractMeta(req));
   }
 
   @Post('refresh')
-  refresh(@Body() dto: RefreshTokenDto) {
-    return this.authService.refresh(dto.refreshToken, dto.deviceId);
+  refresh(@Req() req: any, @Body() dto: RefreshTokenDto) {
+    return this.authService.refresh(
+      dto.refreshToken,
+      dto.deviceId,
+      this.extractMeta(req),
+    );
   }
 
   @Post('phone-login')

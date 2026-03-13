@@ -14,6 +14,7 @@ import { SalesProfile } from '../users/entities/sales-profile.entity';
 import { SalesCommission } from '../users/entities/sales-commission.entity';
 import { WasherProfile } from '../users/entities/washer-profile.entity';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { SecurityAuditEvent } from './entities/security-audit-event.entity';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
       SalesProfile,
       SalesCommission,
       WasherProfile,
+      SecurityAuditEvent,
     ]),
     RedisModule.forRootAsync({
       useFactory: (config: ConfigService) => ({

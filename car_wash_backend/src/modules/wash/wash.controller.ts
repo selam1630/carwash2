@@ -68,6 +68,14 @@ export class WashController {
     return accepted;
   }
 
+  @Post('requests/:id/decline')
+  @Roles(UserRole.WASHER, UserRole.ADMIN)
+  async declineRequest(@Req() req: any, @Param('id') requestId: string) {
+    const request = await this.washService.decline(req.user, requestId);
+    await this.washGateway.advanceSequentialDispatch(request);
+    return { ok: true, requestId: request.id };
+  }
+
   @Post('requests/:id/location')
   @Roles(UserRole.WASHER)
   async updateLocation(

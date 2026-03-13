@@ -75,7 +75,9 @@ export class WashService {
       washStartedAt: null,
     });
 
-    return this.washRepo.save(request);
+    const saved = await this.washRepo.save(request);
+    await this.clearCurrentDispatchOffer(saved.id);
+    return saved;
   }
 
   async listOpen() {
@@ -121,10 +123,27 @@ export class WashService {
       take: 100,
     });
 
-    return open.filter((r) => {
-      const d = this.haversineKm(lat as number, lng as number, r.pickupLat, r.pickupLng);
+    const nearby = open.filter((r) => {
+      const d = this.haversineKm(
+        lat as number,
+        lng as number,
+        r.pickupLat,
+        r.pickupLng,
+      );
       return d <= radiusKm;
     });
+
+    const visible: WashRequest[] = [];
+    for (const request of nearby) {
+      const offeredWasherId = await this.redis.get(this.dispatchOfferKey(request.id));
+      // Show only requests currently offered to this washer.
+      // Fallback for legacy requests without dispatch key: still visible.
+      if (!offeredWasherId || offeredWasherId === washerId) {
+        visible.push(request);
+      }
+    }
+
+    return visible;
   }
 
   async getActiveForOwner(ownerUser: AuthUser) {
@@ -168,6 +187,8 @@ export class WashService {
       throw new BadRequestException('Request already taken or closed');
     }
 
+    await this.ensureWasherCanAcceptCurrentOffer(requestId, washerId);
+
     request.status = WashRequestStatus.ACCEPTED;
     request.washerId = washerId;
     request.washer = await this.usersRepo.findOne({ where: { id: washerId } });
@@ -177,7 +198,26 @@ export class WashService {
     request.washerSubmittedAt = null;
     request.updatedAt = new Date();
 
-    return this.washRepo.save(request);
+    const saved = await this.washRepo.save(request);
+    await this.clearCurrentDispatchOffer(requestId);
+    return saved;
+  }
+
+  async decline(washerUser: AuthUser, requestId: string) {
+    await this.ensureWasherOrAdmin(washerUser);
+    const washerId = this.getUserId(washerUser);
+
+    const request = await this.washRepo.findOne({ where: { id: requestId } });
+    if (!request) {
+      throw new NotFoundException('Wash request not found');
+    }
+    if (request.status !== WashRequestStatus.REQUESTED) {
+      throw new BadRequestException('Request is no longer open');
+    }
+
+    await this.ensureWasherCanAcceptCurrentOffer(requestId, washerId);
+    await this.clearCurrentDispatchOffer(requestId);
+    return request;
   }
 
   async startByWasher(
@@ -225,7 +265,9 @@ export class WashService {
     request.status = WashRequestStatus.COMPLETED;
     request.updatedAt = new Date();
 
-    return this.washRepo.save(request);
+    const saved = await this.washRepo.save(request);
+    await this.clearCurrentDispatchOffer(requestId);
+    return saved;
   }
 
   async cancelByOwner(ownerUser: AuthUser, requestId: string) {
@@ -258,7 +300,9 @@ export class WashService {
 
     request.status = WashRequestStatus.CANCELLED;
     request.updatedAt = new Date();
-    return this.washRepo.save(request);
+    const saved = await this.washRepo.save(request);
+    await this.clearCurrentDispatchOffer(requestId);
+    return saved;
   }
 
   async submitCompletionByWasher(
@@ -318,7 +362,9 @@ export class WashService {
       request.status = WashRequestStatus.COMPLETED;
       request.ownerConfirmedAt = new Date();
       request.updatedAt = new Date();
-      return this.washRepo.save(request);
+      const saved = await this.washRepo.save(request);
+      await this.clearCurrentDispatchOffer(requestId);
+      return saved;
     }
 
     // Owner rejected completion -> reopen request for other nearby washers
@@ -333,7 +379,9 @@ export class WashService {
     request.reopenedCount = (request.reopenedCount ?? 0) + 1;
     request.lastReopenedAt = new Date();
     request.updatedAt = new Date();
-    return this.washRepo.save(request);
+    const saved = await this.washRepo.save(request);
+    await this.clearCurrentDispatchOffer(requestId);
+    return saved;
   }
 
   async updateWasherLocation(
@@ -462,7 +510,29 @@ export class WashService {
       items.push({ washerId, lat: wLat, lng: wLng });
     }
 
-    return items;
+    if (items.length === 0) return items;
+
+    const washerIds = items.map((it) => it.washerId);
+    const washers = await this.usersRepo.find({
+      where: { id: In(washerIds), role: UserRole.WASHER, isActive: true },
+      relations: ['washerProfile'],
+    });
+    const washerById = new Map<string, User>(
+      washers.map((w) => [w.id, w]),
+    );
+
+    return items.map((it) => {
+      const washer = washerById.get(it.washerId);
+      const profile = washer?.washerProfile;
+      return {
+        washerId: it.washerId,
+        lat: it.lat,
+        lng: it.lng,
+        name: profile?.fullName ?? 'Washer',
+        phone: profile?.phone ?? washer?.phone ?? '',
+        photo: profile?.mugShot ?? null,
+      };
+    });
   }
 
   async getWasherMonthlyCompletedCount(
@@ -605,6 +675,25 @@ export class WashService {
       select: ['id', 'status'],
     });
     return request?.status === WashRequestStatus.REQUESTED;
+  }
+
+  async setCurrentDispatchOffer(
+    requestId: string,
+    washerId: string,
+    ttlMs: number,
+  ) {
+    if (!requestId || !washerId || ttlMs <= 0) return;
+    await this.redis.set(
+      this.dispatchOfferKey(requestId),
+      washerId,
+      'PX',
+      ttlMs,
+    );
+  }
+
+  async clearCurrentDispatchOffer(requestId: string) {
+    if (!requestId) return;
+    await this.redis.del(this.dispatchOfferKey(requestId));
   }
 
   async getAdminOperationsDashboard(requester: AuthUser) {
@@ -793,6 +882,22 @@ export class WashService {
     }
   }
 
+  private async ensureWasherCanAcceptCurrentOffer(
+    requestId: string,
+    washerId: string,
+  ) {
+    const offeredWasherId = await this.redis.get(this.dispatchOfferKey(requestId));
+    if (!offeredWasherId) {
+      // Backward-compatible fallback when dispatch state is missing.
+      return;
+    }
+    if (offeredWasherId !== washerId) {
+      throw new BadRequestException(
+        'This request is currently offered to another nearby washer.',
+      );
+    }
+  }
+
   private getUserId(user: AuthUser): string {
     const id = user.id ?? user.sub;
     if (!id) {
@@ -811,5 +916,9 @@ export class WashService {
       Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return r * c;
+  }
+
+  private dispatchOfferKey(requestId: string) {
+    return `wash:dispatch:${requestId}:current-offer`;
   }
 }

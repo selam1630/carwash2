@@ -30,12 +30,21 @@ import {
   CommissionSource,
 } from '../users/entities/sales-commission.entity';
 import { WasherProfile } from '../users/entities/washer-profile.entity';
+import { SecurityAuditEvent } from './entities/security-audit-event.entity';
+
+type RequestMeta = {
+  ip?: string;
+  userAgent?: string;
+  route?: string;
+};
 
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
   constructor(
+    @InjectRepository(SecurityAuditEvent)
+    private securityAuditRepo: Repository<SecurityAuditEvent>,
     @InjectRepository(SalesProfile)
     private salesRepo: Repository<SalesProfile>,
     @InjectRepository(SalesCommission)
@@ -59,13 +68,21 @@ export class AuthService {
     );
   }
 
-  async sendOtp(dto: SendOtpDto) {
+  async sendOtp(dto: SendOtpDto, meta?: RequestMeta) {
     const { phone } = dto;
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const key = `otp:${phone}`;
     // Rate limit: max 3 OTPs per 10 min
     const attempts = await this.redis.get(`attempts:${phone}`);
     if (attempts && parseInt(attempts) >= 3) {
+      await this.logSecurityEvent({
+        eventType: 'OTP_SEND_RATE_LIMITED',
+        severity: 'WARN',
+        phone,
+        ip: meta?.ip,
+        userAgent: meta?.userAgent,
+        route: meta?.route,
+      });
       throw new BadRequestException('Too many attempts. Try again later.');
     }
 
@@ -95,17 +112,59 @@ export class AuthService {
     }
   }
 
-  async verifyOtp(dto: VerifyOtpDto) {
+  async verifyOtp(dto: VerifyOtpDto, meta?: RequestMeta) {
     const { phone, otp } = dto;
     const key = `otp:${phone}`;
+    const verifyLockKey = `otp_verify_lock:${phone}`;
+    const verifyAttemptsKey = `otp_verify_attempts:${phone}`;
+
+    const locked = await this.redis.get(verifyLockKey);
+    if (locked) {
+      await this.logSecurityEvent({
+        eventType: 'OTP_VERIFY_LOCKED',
+        severity: 'WARN',
+        phone,
+        ip: meta?.ip,
+        userAgent: meta?.userAgent,
+        route: meta?.route,
+      });
+      throw new UnauthorizedException(
+        'Too many invalid OTP attempts. Try again later.',
+      );
+    }
+
     const storedOtp = await this.redis.get(key);
 
     const otpStr = String(otp).trim();
     if (!storedOtp || storedOtp !== otpStr) {
+      const failedAttempts = await this.redis.incr(verifyAttemptsKey);
+      await this.redis.expire(verifyAttemptsKey, 600); // 10 min window
+      await this.logSecurityEvent({
+        eventType: 'OTP_VERIFY_FAILED',
+        severity: 'WARN',
+        phone,
+        ip: meta?.ip,
+        userAgent: meta?.userAgent,
+        route: meta?.route,
+        details: { failedAttempts },
+      });
+      if (failedAttempts >= 5) {
+        await this.redis.set(verifyLockKey, '1', 'EX', 600); // lock 10 min
+        await this.logSecurityEvent({
+          eventType: 'OTP_VERIFY_LOCK_CREATED',
+          severity: 'WARN',
+          phone,
+          ip: meta?.ip,
+          userAgent: meta?.userAgent,
+          route: meta?.route,
+        });
+      }
       throw new UnauthorizedException('Invalid OTP');
     }
 
     await this.redis.del(key);
+    await this.redis.del(verifyAttemptsKey);
+    await this.redis.del(verifyLockKey);
 
     const user = await this.userRepo.findOne({
       where: { phone },
@@ -144,7 +203,7 @@ export class AuthService {
     return this.issueSessionForUser(user, deviceId);
   }
 
-  async refresh(refreshToken: string, deviceId?: string) {
+  async refresh(refreshToken: string, deviceId?: string, meta?: RequestMeta) {
     if (!refreshToken || typeof refreshToken !== 'string') {
       throw new BadRequestException('refreshToken is required');
     }
@@ -161,16 +220,67 @@ export class AuthService {
         ) as CryptoJS.lib.WordArray
       ).toString();
 
-      // If deviceId provided, require matching deviceId on stored token
-      const whereClause: any = { tokenHash: hash, isRevoked: false, user: { id: payload.sub } };
-      if (deviceId) whereClause.deviceId = deviceId;
-
-      const stored = await this.refreshRepo.findOne({
-        where: whereClause,
+      const storedAny = await this.refreshRepo.findOne({
+        where: { tokenHash: hash, user: { id: payload.sub } },
+        relations: ['user'],
       });
 
-      if (!stored || new Date() > stored.expiresAt) {
-        throw new UnauthorizedException();
+      if (storedAny?.isRevoked) {
+        await this.refreshRepo.update(
+          { user: { id: payload.sub } },
+          { isRevoked: true },
+        );
+        await this.logSecurityEvent({
+          eventType: 'REFRESH_TOKEN_REUSE_DETECTED',
+          severity: 'CRITICAL',
+          userId: payload.sub,
+          ip: meta?.ip,
+          userAgent: meta?.userAgent,
+          route: meta?.route,
+          details: { deviceId },
+        });
+        throw new UnauthorizedException(
+          'Session security check failed. Please login again.',
+        );
+      }
+
+      if (!storedAny || new Date() > storedAny.expiresAt) {
+        await this.refreshRepo.update(
+          { user: { id: payload.sub } },
+          { isRevoked: true },
+        );
+        await this.logSecurityEvent({
+          eventType: 'REFRESH_TOKEN_INVALID_OR_EXPIRED',
+          severity: 'WARN',
+          userId: payload.sub,
+          ip: meta?.ip,
+          userAgent: meta?.userAgent,
+          route: meta?.route,
+          details: { deviceId },
+        });
+        throw new UnauthorizedException('Invalid refresh token');
+      }
+
+      if (deviceId && storedAny.deviceId && storedAny.deviceId !== deviceId) {
+        await this.refreshRepo.update(
+          { user: { id: payload.sub } },
+          { isRevoked: true },
+        );
+        await this.logSecurityEvent({
+          eventType: 'REFRESH_TOKEN_DEVICE_MISMATCH',
+          severity: 'CRITICAL',
+          userId: payload.sub,
+          ip: meta?.ip,
+          userAgent: meta?.userAgent,
+          route: meta?.route,
+          details: {
+            expectedDeviceId: storedAny.deviceId,
+            gotDeviceId: deviceId,
+          },
+        });
+        throw new UnauthorizedException(
+          'Session security check failed. Please login again.',
+        );
       }
 
       const user = await this.userRepo.findOne({ where: { id: payload.sub } });
@@ -192,7 +302,7 @@ export class AuthService {
       ).toString();
 
       // Revoke old
-      await this.refreshRepo.update(stored.id, { isRevoked: true });
+      await this.refreshRepo.update(storedAny.id, { isRevoked: true });
 
       // Save new, preserving deviceId
       const expiresAt = new Date();
@@ -201,11 +311,21 @@ export class AuthService {
         tokenHash: newHash,
         user,
         expiresAt,
-        deviceId: deviceId ?? stored.deviceId,
+        deviceId: deviceId ?? storedAny.deviceId,
       });
 
       return { accessToken: newAccess, refreshToken: newRefresh };
     } catch (err) {
+      await this.logSecurityEvent({
+        eventType: 'REFRESH_TOKEN_REJECTED',
+        severity: 'WARN',
+        ip: meta?.ip,
+        userAgent: meta?.userAgent,
+        route: meta?.route,
+        details: {
+          reason: err instanceof Error ? err.message : String(err),
+        },
+      });
       if (err instanceof UnauthorizedException) {
         throw err;
       }
@@ -508,7 +628,7 @@ export class AuthService {
   /**
    * Sales-only: register a car owner on behalf of a customer. Sales person gets commission.
    */
-   async registerOwnerBySales(
+  async registerOwnerBySales(
     salesUser: { id: string; role: string },
     dto: RegisterOwnerDto,
     files: {
@@ -637,5 +757,37 @@ export class AuthService {
     return {
       message: `Owner registered. ${otpResult.message} Commission recorded.`,
     };
+  }
+
+  private async logSecurityEvent(event: {
+    eventType: string;
+    severity?: string;
+    userId?: string;
+    phone?: string;
+    ip?: string;
+    userAgent?: string;
+    route?: string;
+    details?: Record<string, unknown>;
+  }) {
+    try {
+      await this.securityAuditRepo.save(
+        this.securityAuditRepo.create({
+          eventType: event.eventType,
+          severity: event.severity ?? 'WARN',
+          userId: event.userId,
+          phone: event.phone,
+          ip: event.ip,
+          userAgent: event.userAgent,
+          route: event.route,
+          details: event.details,
+        }),
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Failed to write security audit event ${event.eventType}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
   }
 }

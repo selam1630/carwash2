@@ -113,55 +113,97 @@ export default function PlanManagementTab({ token, isAdmin }: Props) {
   };
 
   return (
-    <div>
-      <h3>Plan Management</h3>
-      <form onSubmit={onCreatePlan} className="grid">
-        <label>
-          Plan Name
-          <input value={form.name} onChange={(e) => updateField('name', e.target.value)} required />
-        </label>
-        <label>
-          Washes Per Month
-          <input type="number" min="1" step="1" value={form.washesPerMonth} onChange={(e) => updateField('washesPerMonth', e.target.value)} required />
-        </label>
-        <label>
-          Price
-          <input type="number" min="0" step="0.01" value={form.price} onChange={(e) => updateField('price', e.target.value)} required />
-        </label>
-        <button type="submit" disabled={submitting || !isAdmin}>
-          {submitting ? 'Creating...' : 'Create Plan'}
-        </button>
-      </form>
-
-      <div className="actions">
-        <button type="button" className="secondary" onClick={loadPlans} disabled={plansLoading || !isAdmin}>
-          {plansLoading ? 'Refreshing...' : 'Refresh Plans'}
-        </button>
-      </div>
-
-      <div className="plan-list">
-        {plans.map((plan) => (
-          <div className="plan-row" key={plan.id}>
-            <div>
-              <strong>{plan.name}</strong>
-              <p className="muted small">
-                {plan.washesPerMonth} washes/month • {plan.price} ETB • {plan.isActive ? 'Active' : 'Inactive'}
-              </p>
-            </div>
-            <div className="actions">
-              <button type="button" onClick={() => togglePlanActive(plan)} disabled={!isAdmin}>
-                {plan.isActive ? 'Deactivate' : 'Activate'}
-              </button>
-              <button type="button" className="danger" onClick={() => removePlan(plan)} disabled={!isAdmin}>
-                Delete
-              </button>
-            </div>
+    <section className="plans-layout">
+      <article className="plans-hero">
+        <p className="hero-eyebrow">Subscription Engine</p>
+        <h3>Plan Management</h3>
+        <p className="hint">
+          Create and control packages offered to owners. Keep active plans clean, priced correctly, and easy to manage.
+        </p>
+        <div className="sales-checklist">
+          <div className="sales-check-item">
+            <strong>Packaging</strong>
+            <span>Define wash limits per month.</span>
           </div>
-        ))}
-        {!plans.length && !plansLoading ? <p className="muted">No plans found.</p> : null}
-      </div>
+          <div className="sales-check-item">
+            <strong>Pricing</strong>
+            <span>Set ETB prices with clear monthly value.</span>
+          </div>
+          <div className="sales-check-item">
+            <strong>Lifecycle</strong>
+            <span>Activate, deactivate, and retire plans safely.</span>
+          </div>
+        </div>
+      </article>
+
+      <article className="card plans-form-card">
+        <form onSubmit={onCreatePlan} className="grid">
+          <p className="sales-section-title">Create Plan</p>
+          <div className="sales-field-grid">
+            <label>
+              Plan Name
+              <input value={form.name} onChange={(e) => updateField('name', e.target.value)} required />
+            </label>
+            <label>
+              Washes Per Month
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={form.washesPerMonth}
+                onChange={(e) => updateField('washesPerMonth', e.target.value)}
+                required
+              />
+            </label>
+            <label>
+              Price
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.price}
+                onChange={(e) => updateField('price', e.target.value)}
+                required
+              />
+            </label>
+          </div>
+          <div className="actions">
+            <button type="submit" disabled={submitting || !isAdmin}>
+              {submitting ? 'Creating...' : 'Create Plan'}
+            </button>
+            <button type="button" className="secondary" onClick={loadPlans} disabled={plansLoading || !isAdmin}>
+              {plansLoading ? 'Refreshing...' : 'Refresh Plans'}
+            </button>
+          </div>
+        </form>
+      </article>
+
+      <article className="card plans-list-card">
+        <h3>Existing Plans</h3>
+        <div className="plan-list">
+          {plans.map((plan) => (
+            <div className="plan-row" key={plan.id}>
+              <div>
+                <strong>{plan.name}</strong>
+                <p className="muted small">
+                  {plan.washesPerMonth} washes/month • {plan.price} ETB • {plan.isActive ? 'Active' : 'Inactive'}
+                </p>
+              </div>
+              <div className="actions">
+                <button type="button" onClick={() => togglePlanActive(plan)} disabled={!isAdmin}>
+                  {plan.isActive ? 'Deactivate' : 'Activate'}
+                </button>
+                <button type="button" className="danger" onClick={() => removePlan(plan)} disabled={!isAdmin}>
+                  Delete
+                </button>
+              </div>
+            </div>
+          ))}
+          {!plans.length && !plansLoading ? <p className="muted">No plans found.</p> : null}
+        </div>
+      </article>
 
       {message ? <p className="status">{message}</p> : null}
-    </div>
+    </section>
   );
 }

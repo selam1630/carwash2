@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'otp_verification_screen.dart';
 import '../api/api_client.dart';
+import '../theme/app_theme.dart';
 import '../widgets/theme_mode_action.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -166,6 +167,7 @@ class _LoginScreenState extends State<LoginScreen> {
         body: Center(child: CircularProgressIndicator()),
       );
     }
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Login'),
@@ -174,52 +176,86 @@ class _LoginScreenState extends State<LoginScreen> {
           IconButton(onPressed: _logout, icon: const Icon(Icons.logout)),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    TextField(
-                      controller: _phoneController,
-                      decoration: const InputDecoration(
-                        labelText: 'Phone Number',
-                        hintText: '+2519XXXXXXXX',
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: isDark
+                ? const [Color(0xFF02032E), Color(0xFF052D6F)]
+                : const [AppTheme.veryLightBlue, AppTheme.lightCyan],
+          ),
+        ),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Card(
+                elevation: 6,
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Welcome Back',
+                        style: Theme.of(context).textTheme.headlineSmall,
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: _loginPhoneOnly,
-                        child: const Text('Login'),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Use your phone number to continue.',
+                        style: Theme.of(context).textTheme.bodyMedium,
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: _sendOtp,
-                        child: const Text('Send OTP'),
+                      const SizedBox(height: 18),
+                      TextField(
+                        controller: _phoneController,
+                        decoration: const InputDecoration(
+                          labelText: 'Phone Number',
+                          hintText: '+2519XXXXXXXX',
+                          prefixIcon: Icon(Icons.phone_iphone),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    TextButton(
-                      onPressed: _goToVerifyWithoutResend,
-                      child: const Text('I already have OTP'),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.pushNamed(context, '/register'),
-                      child: const Text('Register (owner)'),
-                    ),
-                  ],
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: _loginPhoneOnly,
+                          icon: const Icon(Icons.login),
+                          label: const Text('Login'),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _sendOtp,
+                          icon: const Icon(Icons.sms),
+                          label: const Text('Send OTP'),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          TextButton(
+                            onPressed: _goToVerifyWithoutResend,
+                            child: const Text('I already have OTP'),
+                          ),
+                          TextButton(
+                            onPressed: () =>
+                                Navigator.pushNamed(context, '/register'),
+                            child: const Text('Register'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ],
+          ),
         ),
       ),
     );

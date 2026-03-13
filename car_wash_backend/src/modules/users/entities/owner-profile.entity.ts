@@ -8,6 +8,7 @@ import {
 } from 'typeorm';
 import { User } from './user.entity';
 import { SalesProfile } from './sales-profile.entity';
+import { piiValueTransformer } from '../../../common/security/pii-crypto';
 
 @Entity('owner_profiles')
 export class OwnerProfile {
@@ -33,10 +34,10 @@ export class OwnerProfile {
   @Column({ nullable: true })
   carBackPhoto?: string;
 
-  @Column({ nullable: true })
+  @Column({ nullable: true, transformer: piiValueTransformer })
   secondaryPhone?: string;
 
-  @Column({ nullable: true })
+  @Column({ nullable: true, transformer: piiValueTransformer })
   driverLicensePhoto?: string;
 
   @ManyToOne(() => SalesProfile, { nullable: true, onDelete: 'SET NULL' })

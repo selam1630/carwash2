@@ -44,140 +44,157 @@ export default function OperationsDashboardTab({ token, isAdmin }: Props) {
   if (!isAdmin) return <p className="status error">Only ADMIN can view live operations.</p>;
 
   return (
-    <>
-      <h3>Live Operations Dashboard</h3>
-      <p className="muted small">Auto-refreshes every 10 seconds.</p>
-      <div className="actions">
-        <button type="button" className="secondary" onClick={load} disabled={loading}>
-          {loading ? 'Refreshing...' : 'Refresh now'}
-        </button>
-      </div>
-      {message ? <p className="status error">{message}</p> : null}
-
-      {data ? (
-        <>
-          <p className="muted small">Generated: {new Date(data.generatedAt).toLocaleString()}</p>
-
-          <div className="plan-list">
-            <div className="plan-row">
-              <strong>Active wash requests</strong>
-              <button type="button" className="secondary" onClick={() => setSelected('active')}>
-                {data.summary.activeWashRequests}
-              </button>
-            </div>
-            <div className="plan-row">
-              <strong>Waiting owner confirmations</strong>
-              <button type="button" className="secondary" onClick={() => setSelected('waiting')}>
-                {data.summary.waitingOwnerConfirmations}
-              </button>
-            </div>
-            <div className="plan-row">
-              <strong>Online bikers</strong>
-              <button type="button" className="secondary" onClick={() => setSelected('online')}>
-                {data.summary.onlineBikers}
-              </button>
-            </div>
-            <div className="plan-row">
-              <strong>Offline bikers</strong>
-              <button type="button" className="secondary" onClick={() => setSelected('offline')}>
-                {data.summary.offlineBikers}
-              </button>
-            </div>
-            <div className="plan-row">
-              <strong>Reopened jobs</strong>
-              <button type="button" className="secondary" onClick={() => setSelected('reopened')}>
-                {data.summary.reopenedJobs}
-              </button>
-            </div>
-            <div className="plan-row">
-              <strong>Failed jobs</strong>
-              <button type="button" className="secondary" onClick={() => setSelected('failed')}>
-                {data.summary.failedJobs}
-              </button>
-            </div>
+    <section className="ops-shell">
+      <article className="ops-hero">
+        <p className="hero-eyebrow">Operations Center</p>
+        <h3>Live Operations Dashboard</h3>
+        <p className="hint">
+          Monitor request flow, biker availability, and failure/reopen signals in real time.
+        </p>
+        <div className="sales-checklist">
+          <div className="sales-check-item">
+            <strong>Real-time Feed</strong>
+            <span>Auto-refreshes every 10 seconds.</span>
           </div>
+          <div className="sales-check-item">
+            <strong>Quick Filters</strong>
+            <span>Click any metric card to filter detail records.</span>
+          </div>
+          <div className="sales-check-item">
+            <strong>Issue Tracking</strong>
+            <span>Track reopened and failed jobs for intervention.</span>
+          </div>
+        </div>
+      </article>
 
-          <h3 style={{ marginTop: 14 }}>Details</h3>
+      <article className="card ops-panel">
+        <header className="ops-head">
+          <div>
+            <h3>Operations Snapshot</h3>
+            <p className="muted small">Live monitoring page</p>
+          </div>
           <div className="actions">
-            <button type="button" className="secondary" onClick={() => setSelected(null)}>
-              Show All
+            <button type="button" className="secondary" onClick={load} disabled={loading}>
+              {loading ? 'Refreshing...' : 'Refresh now'}
             </button>
           </div>
-          <div className="plan-list">
-            {(selected === null || selected === 'active') &&
-              data.activeWashRequests.map((r) => (
-                <div className="plan-row" key={`ac-${r.id}`}>
-                  <div>
-                    <strong>Active: {r.id}</strong>
-                    <p className="muted small">Owner: {r.ownerId}</p>
-                    <p className="muted small">Washer: {r.washerId || '-'}</p>
-                  </div>
-                  <span>{r.status}</span>
-                </div>
-              ))}
+        </header>
+        {message ? <p className="status error">{message}</p> : null}
 
-            {(selected === null || selected === 'waiting') &&
-              (data.waitingOwnerConfirmations.length === 0 && selected === 'waiting' ? (
-                <p className="muted">No requests waiting for owner confirmation.</p>
-              ) : (
-                data.waitingOwnerConfirmations.map((r) => (
-                  <div className="plan-row" key={`wc-${r.id}`}>
+        {data ? (
+          <>
+            <p className="muted small">Generated: {new Date(data.generatedAt).toLocaleString()}</p>
+
+            <div className="ops-metric-grid">
+              <button type="button" className={`ops-metric ${selected === 'active' ? 'active' : ''}`} onClick={() => setSelected('active')}>
+                <span>Active wash requests</span>
+                <strong>{data.summary.activeWashRequests}</strong>
+              </button>
+              <button type="button" className={`ops-metric ${selected === 'waiting' ? 'active' : ''}`} onClick={() => setSelected('waiting')}>
+                <span>Waiting owner confirmations</span>
+                <strong>{data.summary.waitingOwnerConfirmations}</strong>
+              </button>
+              <button type="button" className={`ops-metric ${selected === 'online' ? 'active' : ''}`} onClick={() => setSelected('online')}>
+                <span>Online bikers</span>
+                <strong>{data.summary.onlineBikers}</strong>
+              </button>
+              <button type="button" className={`ops-metric ${selected === 'offline' ? 'active' : ''}`} onClick={() => setSelected('offline')}>
+                <span>Offline bikers</span>
+                <strong>{data.summary.offlineBikers}</strong>
+              </button>
+              <button type="button" className={`ops-metric ${selected === 'reopened' ? 'active' : ''}`} onClick={() => setSelected('reopened')}>
+                <span>Reopened jobs</span>
+                <strong>{data.summary.reopenedJobs}</strong>
+              </button>
+              <button type="button" className={`ops-metric ${selected === 'failed' ? 'active' : ''}`} onClick={() => setSelected('failed')}>
+                <span>Failed jobs</span>
+                <strong>{data.summary.failedJobs}</strong>
+              </button>
+            </div>
+
+            <div className="ops-detail-head">
+              <h3>Details</h3>
+              <button type="button" className="secondary" onClick={() => setSelected(null)}>
+                Show All
+              </button>
+            </div>
+
+            <div className="plan-list">
+              {(selected === null || selected === 'active') &&
+                data.activeWashRequests.map((r) => (
+                  <div className="plan-row" key={`ac-${r.id}`}>
                     <div>
-                      <strong>Waiting confirm: {r.id}</strong>
+                      <strong>Active: {r.id}</strong>
                       <p className="muted small">Owner: {r.ownerId}</p>
                       <p className="muted small">Washer: {r.washerId || '-'}</p>
                     </div>
                     <span>{r.status}</span>
                   </div>
-                ))
-              ))}
+                ))}
 
-            {(selected === null || selected === 'online') &&
-              data.onlineBikers.map((w) => (
-                <div className="plan-row" key={`on-${w.washerId}`}>
-                  <div>
-                    <strong>{w.fullName || 'Unnamed biker'}</strong>
-                    <p className="muted small">{w.phone}</p>
-                  </div>
-                  <span>Online</span>
-                </div>
-              ))}
+              {(selected === null || selected === 'waiting') &&
+                (data.waitingOwnerConfirmations.length === 0 && selected === 'waiting' ? (
+                  <p className="muted">No requests waiting for owner confirmation.</p>
+                ) : (
+                  data.waitingOwnerConfirmations.map((r) => (
+                    <div className="plan-row" key={`wc-${r.id}`}>
+                      <div>
+                        <strong>Waiting confirm: {r.id}</strong>
+                        <p className="muted small">Owner: {r.ownerId}</p>
+                        <p className="muted small">Washer: {r.washerId || '-'}</p>
+                      </div>
+                      <span>{r.status}</span>
+                    </div>
+                  ))
+                ))}
 
-            {(selected === null || selected === 'offline') &&
-              data.offlineBikers.map((w) => (
-                <div className="plan-row" key={`off-${w.washerId}`}>
-                  <div>
-                    <strong>{w.fullName || 'Unnamed biker'}</strong>
-                    <p className="muted small">{w.phone}</p>
+              {(selected === null || selected === 'online') &&
+                data.onlineBikers.map((w) => (
+                  <div className="plan-row" key={`on-${w.washerId}`}>
+                    <div>
+                      <strong>{w.fullName || 'Unnamed biker'}</strong>
+                      <p className="muted small">{w.phone}</p>
+                    </div>
+                    <span>Online</span>
                   </div>
-                  <span>Offline</span>
-                </div>
-              ))}
+                ))}
 
-            {(selected === null || selected === 'reopened') &&
-              data.reopenedJobs.map((r) => (
-                <div className="plan-row" key={`re-${r.id}`}>
-                  <div>
-                    <strong>Reopened: {r.id}</strong>
-                    <p className="muted small">Reopened count: {r.reopenedCount}</p>
+              {(selected === null || selected === 'offline') &&
+                data.offlineBikers.map((w) => (
+                  <div className="plan-row" key={`off-${w.washerId}`}>
+                    <div>
+                      <strong>{w.fullName || 'Unnamed biker'}</strong>
+                      <p className="muted small">{w.phone}</p>
+                    </div>
+                    <span>Offline</span>
                   </div>
-                  <span>{r.status}</span>
-                </div>
-              ))}
+                ))}
 
-            {(selected === null || selected === 'failed') &&
-              data.failedJobs.map((r) => (
-                <div className="plan-row" key={`fa-${r.id}`}>
-                  <div>
-                    <strong>Failed: {r.id}</strong>
-                    <p className="muted small">Owner: {r.ownerId}</p>
+              {(selected === null || selected === 'reopened') &&
+                data.reopenedJobs.map((r) => (
+                  <div className="plan-row" key={`re-${r.id}`}>
+                    <div>
+                      <strong>Reopened: {r.id}</strong>
+                      <p className="muted small">Reopened count: {r.reopenedCount}</p>
+                    </div>
+                    <span>{r.status}</span>
                   </div>
-                  <span>{r.status}</span>
-                </div>
-              ))}
-          </div>
-        </>
-      ) : null}
-    </>
+                ))}
+
+              {(selected === null || selected === 'failed') &&
+                data.failedJobs.map((r) => (
+                  <div className="plan-row" key={`fa-${r.id}`}>
+                    <div>
+                      <strong>Failed: {r.id}</strong>
+                      <p className="muted small">Owner: {r.ownerId}</p>
+                    </div>
+                    <span>{r.status}</span>
+                  </div>
+                ))}
+            </div>
+          </>
+        ) : null}
+      </article>
+    </section>
   );
 }

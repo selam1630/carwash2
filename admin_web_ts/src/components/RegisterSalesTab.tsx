@@ -103,104 +103,141 @@ export default function RegisterSalesTab({ token, isAdmin }: Props) {
   };
 
   return (
-    <div>
-      <h3>Register Sales</h3>
-      <form onSubmit={onRegisterSales} className="grid">
-        <label>
-          Full Name
-          <input value={form.fullName} onChange={(e) => updateField('fullName', e.target.value)} required />
-        </label>
-        <label>
-          Phone (+2519xxxxxxxx)
-          <input value={form.phone} onChange={(e) => updateField('phone', e.target.value)} placeholder="+2519xxxxxxxx" required />
-        </label>
-        <label>
-          National ID
-          <input value={form.nationalId} onChange={(e) => updateField('nationalId', e.target.value)} required />
-        </label>
-        <label>
-          Sponsor/Warrantor National ID
-          <input value={form.sponsorNationalId} onChange={(e) => updateField('sponsorNationalId', e.target.value)} required />
-        </label>
-        <label>
-          Bank Name
-          <input value={form.bankName} onChange={(e) => updateField('bankName', e.target.value)} required />
-        </label>
-        <label>
-          Account Number
-          <input value={form.accountNumber} onChange={(e) => updateField('accountNumber', e.target.value)} required />
-        </label>
-        <button type="submit" disabled={submitting || !isAdmin}>
-          {submitting ? 'Registering...' : 'Register Sales'}
-        </button>
-      </form>
-      {message ? <p className="status">{message}</p> : null}
+    <section className="sales-layout">
+      <article className="sales-hero">
+        <p className="hero-eyebrow">Sales Network</p>
+        <h3>Register Sales Agent</h3>
+        <p className="hint">
+          Onboard sales agents with verified identity and payout data, then track monthly commission approvals.
+        </p>
+        <div className="sales-checklist">
+          <div className="sales-check-item">
+            <strong>Identity</strong>
+            <span>Full profile with national ID and sponsor details.</span>
+          </div>
+          <div className="sales-check-item">
+            <strong>Banking</strong>
+            <span>Required before commission payout approvals.</span>
+          </div>
+          <div className="sales-check-item">
+            <strong>Commissions</strong>
+            <span>Review pending records by month and approve quickly.</span>
+          </div>
+        </div>
+      </article>
 
-      <hr style={{ margin: '20px 0' }} />
+      <article className="card sales-form-card">
+        <form onSubmit={onRegisterSales} className="grid">
+          <p className="sales-section-title">Sales Profile</p>
+          <div className="sales-field-grid">
+            <label>
+              Full Name
+              <input value={form.fullName} onChange={(e) => updateField('fullName', e.target.value)} required />
+            </label>
+            <label>
+              Phone (+2519xxxxxxxx)
+              <input
+                value={form.phone}
+                onChange={(e) => updateField('phone', e.target.value)}
+                placeholder="+2519xxxxxxxx"
+                required
+              />
+            </label>
+            <label>
+              National ID
+              <input value={form.nationalId} onChange={(e) => updateField('nationalId', e.target.value)} required />
+            </label>
+            <label>
+              Sponsor/Warrantor National ID
+              <input
+                value={form.sponsorNationalId}
+                onChange={(e) => updateField('sponsorNationalId', e.target.value)}
+                required
+              />
+            </label>
+            <label>
+              Bank Name
+              <input value={form.bankName} onChange={(e) => updateField('bankName', e.target.value)} required />
+            </label>
+            <label>
+              Account Number
+              <input value={form.accountNumber} onChange={(e) => updateField('accountNumber', e.target.value)} required />
+            </label>
+          </div>
+          <div className="actions">
+            <button type="submit" disabled={submitting || !isAdmin}>
+              {submitting ? 'Registering...' : 'Register Sales'}
+            </button>
+          </div>
+        </form>
+        {message ? <p className="status">{message}</p> : null}
+      </article>
 
-      <h3>Sales Monthly Commissions</h3>
-      <div className="grid" style={{ gridTemplateColumns: '1fr 1fr auto', alignItems: 'end' }}>
-        <label>
-          Year
-          <input
-            type="number"
-            value={year}
-            onChange={(e) => setYear(Number(e.target.value))}
-          />
-        </label>
-        <label>
-          Month
-          <input
-            type="number"
-            min={1}
-            max={12}
-            value={month}
-            onChange={(e) => setMonth(Number(e.target.value))}
-          />
-        </label>
-        <button type="button" onClick={loadMonthlyCommissions} disabled={!isAdmin || loadingCommissions}>
-          {loadingCommissions ? 'Loading...' : 'Load'}
-        </button>
-      </div>
+      <article className="card sales-commission-card">
+        <h3>Sales Monthly Commissions</h3>
+        <div className="sales-filter-grid">
+          <label>
+            Year
+            <input type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} />
+          </label>
+          <label>
+            Month
+            <input
+              type="number"
+              min={1}
+              max={12}
+              value={month}
+              onChange={(e) => setMonth(Number(e.target.value))}
+            />
+          </label>
+          <button type="button" onClick={loadMonthlyCommissions} disabled={!isAdmin || loadingCommissions}>
+            {loadingCommissions ? 'Loading...' : 'Load'}
+          </button>
+        </div>
 
-      {commissionMessage ? <p className="status">{commissionMessage}</p> : null}
+        {commissionMessage ? <p className="status">{commissionMessage}</p> : null}
 
-      {items.length > 0 ? (
-        <table className="table" style={{ width: '100%', marginTop: 12 }}>
-          <thead>
-            <tr>
-              <th>Sales</th>
-              <th>Phone</th>
-              <th>Registrations</th>
-              <th>Pending (birr)</th>
-              <th>Paid (birr)</th>
-              <th>Total (birr)</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((it) => (
-              <tr key={it.salesProfileId}>
-                <td>{it.salesFullName || '-'}</td>
-                <td>{it.salesPhone || '-'}</td>
-                <td>{it.registrationsCount}</td>
-                <td>{it.pendingAmount}</td>
-                <td>{it.paidAmount}</td>
-                <td>{it.totalAmount}</td>
-                <td>
-                  <button
-                    type="button"
-                    disabled={!isAdmin || it.pendingAmount <= 0}
-                    onClick={() => onApprove(it.salesUserId)}
-                  >
-                    Approve Month
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : null}
-    </div>
+        {items.length > 0 ? (
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Sales</th>
+                  <th>Phone</th>
+                  <th>Registrations</th>
+                  <th>Pending (birr)</th>
+                  <th>Paid (birr)</th>
+                  <th>Total (birr)</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((it) => (
+                  <tr key={it.salesProfileId}>
+                    <td>{it.salesFullName || '-'}</td>
+                    <td>{it.salesPhone || '-'}</td>
+                    <td>{it.registrationsCount}</td>
+                    <td>{it.pendingAmount}</td>
+                    <td>{it.paidAmount}</td>
+                    <td>{it.totalAmount}</td>
+                    <td>
+                      <button
+                        type="button"
+                        disabled={!isAdmin || it.pendingAmount <= 0}
+                        onClick={() => onApprove(it.salesUserId)}
+                      >
+                        Approve Month
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="muted small">No commission records loaded yet.</p>
+        )}
+      </article>
+    </section>
   );
 }
